@@ -27,7 +27,7 @@ createServer(async (request, response) => {
       response.writeHead(302, { Location: '/sim/index.html' }).end();
       return;
     }
-    const coachFile = url.pathname.match(/^\/coach-data\/([A-Z0-9]{2,5}(?:-flow|-builds)?\.json)$/);
+    const coachFile = url.pathname.match(/^\/coach-data\/([A-Z0-9]{2,5}(?:-flow|-builds|-splash)?\.json)$/);
     if (coachFile) {
       const upstream = await fetch(`${COACH_SITE}/${coachFile[1]}`).catch(() => null);
       const json = upstream?.ok && (upstream.headers.get('content-type') ?? '').includes('json');

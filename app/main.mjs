@@ -621,18 +621,18 @@ async function fetchCoachFile(name) {
 }
 
 async function downloadCoach(setCode) {
-  const [set, flow, builds] = await Promise.all(
-    [`${setCode}.json`, `${setCode}-flow.json`, `${setCode}-builds.json`].map(fetchCoachFile),
+  const [set, flow, builds, splash] = await Promise.all(
+    [`${setCode}.json`, `${setCode}-flow.json`, `${setCode}-builds.json`, `${setCode}-splash.json`].map(fetchCoachFile),
   );
   if (!set?.cards || !set?.stats) {
     logData(`coach ${setCode}: not on the trainer site (or offline)`);
     return null;
   }
-  const data = { set, flow, builds };
+  const data = { set, flow, builds, splash };
   mkdirSync(COACH_DIR, { recursive: true });
   writeFileSync(path.join(COACH_DIR, `${setCode}.json`), JSON.stringify({ fetched: Date.now(), ...data }));
   coachCache.set(setCode, data);
-  logData(`coach ${setCode}: downloaded (${set.cards.length} cards, flow ${flow ? 'yes' : 'no'}, shape prices ${builds?.shapeTax ? 'yes' : 'no'})`);
+  logData(`coach ${setCode}: downloaded (${set.cards.length} cards, flow ${flow ? 'yes' : 'no'}, shape prices ${builds?.shapeTax ? 'yes' : 'no'}, splash data ${splash ? 'yes' : 'no'})`);
   return data;
 }
 

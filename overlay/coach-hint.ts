@@ -36,7 +36,7 @@ export function createCoach(data: CoachData): Coach | null {
   const shapeTax = (data.builds as { shapeTax?: Record<string, number[]> } | null)?.shapeTax ?? null;
   return {
     set: file.set,
-    model: buildCoachModel(file.cards, file.stats, est, shapeTax as never),
+    model: buildCoachModel(file.cards, file.stats, est, shapeTax as never, (data.splash ?? null) as never),
     draftCards: buildDraftCards(file.cards as never, rows),
     flow: (data.flow as FlowBaseline | null) ?? null,
     byName: new Map(file.cards.map((card, index) => [card.name, index])),

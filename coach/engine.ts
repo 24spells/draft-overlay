@@ -61,6 +61,19 @@ export type CoachModel = {
   shapeTax: Record<ShapeKind, number[]>;
   /** Win rates of the set's nonland, nonbasic cards, ascending. */
   spellGihSorted: number[];
+  /** Per pair (PAIRS order), per card: worth splashing in that pair's decks (one color away only). */
+  splashOk: boolean[][];
+  /** Per pair, per card: expected win rate when drawn as a splash in that pair's decks (NaN if not one color away). */
+  splashQ: number[][];
+  /** Per pair, per card: how often strong players splash it when they can (shrunk; NaN if not one color away). */
+  splashRate: number[][];
+};
+
+/** The per-set splash file written by scripts/build-splash.ts. */
+export type SplashFile = {
+  onColor: Record<string, [number, number]>;
+  fallback?: number[];
+  cards: Record<string, { all: number[]; pairs: Record<string, number[]> }>;
 };
 
 export const TUNING = {
@@ -70,8 +83,46 @@ export const TUNING = {
   replacementPct: 0.05,
   /** Chance a card outside a deck shape's colors makes that deck anyway. */
   offColor: 0.04,
-  /** A card is worth splashing at this many win-rate points above the set average (fitted by coach-color-lab.ts). */
-  splashAbove: 2,
+  /**
+   * What is worth splashing, from 17Lands data per color pair (<SET>-splash.json,
+   * scripts/build-splash.ts; 2026-11-13: "certain synergies want to splash certain
+   * cards", data driven). A card is a splash candidate for a pair when, splashed in that
+   * pair's decks, drawing it beat drawing the pair's own cards by at least splashWorth
+   * win-rate points, AND strong players splashed it at least splashRate of the time they
+   * could. Thin samples shrink: pair -> the card in all pairs -> a fallback model.
+   */
+  splashWorth: 0,
+  splashRate: 0.25,
+  /** Shrinkage for the splash data: games drawn, and builds where it was available. */
+  splashGames: 150,
+  splashBuilds: 20,
+  /**
+   * The fallback when a set has no splash file (new sets): win-rate points vs the pair's
+   * own cards = a + b x (GIH - own) + cheap non-removal + removal + 2+ symbols. Fitted on
+   * FRA by build-splash.ts (107 well-sampled cards), and the pair's own cards are taken
+   * as the set average + ownAboveMean.
+   */
+  splashFallback: [-1.727, 0.803, -0.472, 0.827, 0.642],
+  ownAboveMean: 0.9,
+  /**
+   * In a splash or 3-4 color deck, a card outside its main pair (a splash card, a
+   * third-color card) plays this often when castable, and pulls you that much less
+   * toward that deck. 1 = always. Audit 2026-11-13: at 1 the coach took a stronger
+   * one-color off-color card over an on-color one too often (it predicted such
+   * cards make the deck 41% of the time; real 25%), and 62%+ drafters sided with
+   * the old pair-only coach in those spots (33% vs 23%). At 0.6, on 6,539 held-out
+   * FRA drafts: those spots even out (32% vs 31%), strong drafters side with this
+   * coach over the old one 35% vs 27% overall, win correlation 0.045 (old 0.043).
+   */
+  thirdPlay: 0.6,
+  /**
+   * A shape's price is per spell, and a deck has ~23 spells: a pick that pulls you toward a
+   * splash or a third color moves the whole deck's quality, not just its own card's. This many
+   * spells' worth of the price is charged when scoring a pick (1 = the price of one card).
+   * Tested 2026-11-13: 6 changed nothing, 23 overcorrected back into the old in-color
+   * bias (strong drafters sided with the old coach 37% vs 26%). Left at 1.
+   */
+  shapeCostSpells: 1,
   /**
    * Making the 23: a castable card only plays if fewer than ~23 better spells in
    * that deck's colors end up in the pool. Expected better spells = those you
@@ -151,6 +202,8 @@ export function buildCoachModel(
   estimates: Record<string, { gih: number }> = {},
   /** The set's measured shape prices (<SET>-builds.json); the FRA defaults otherwise. */
   shapeTax?: Partial<Record<ShapeKind, number[]>> | null,
+  /** The set's splash data (<SET>-splash.json); the fallback model otherwise. */
+  splash?: SplashFile | null,
 ): CoachModel {
   const all = rateSet(stats, { deck: 'ALL', players: 'all', basis: 'gih', minGames: 0 });
   const graded = [...all.values()].filter((r) => r.values.gih !== null && (r.values.games ?? 0) >= 500 && !BASICS.has(r.name));
@@ -194,7 +247,87 @@ export function buildCoachModel(
   });
   const tax = { ...TUNING.shapeTax, ...(shapeTax ?? {}) } as Record<ShapeKind, number[]>;
   const spellGihSorted = cards.map((c, i) => (/Land/.test(c.type) || BASICS.has(c.name) ? null : gih[i])).filter((g): g is number => g !== null).sort((a, b) => a - b);
-  return { cards, gih, gihPair, pairShare, replacement, setMean: mean, roles, fixes, fit, fitMask, pips: pipList, shapeTax: tax, spellGihSorted };
+  const sp = splashTables(cards, gih, roles, mean, fitMask, pipList, splash ?? null);
+  return { cards, gih, gihPair, pairShare, replacement, setMean: mean, roles, fixes, fit, fitMask, pips: pipList, shapeTax: tax, spellGihSorted, ...sp };
+}
+
+/**
+ * Splash tables per pair and card, from the set's splash data with shrinkage
+ * (pair -> card overall -> fallback model), or from the fallback model alone.
+ */
+function splashTables(
+  cards: CoachCard[],
+  gih: number[],
+  roles: Role[][],
+  setMean: number,
+  fitMask: number[],
+  pips: number[][],
+  file: SplashFile | null,
+): { splashOk: boolean[][]; splashQ: number[][]; splashRate: number[][] } {
+  const ownAll = file ? Object.values(file.onColor).reduce((a, [g, w]) => [a[0] + g, a[1] + w], [0, 0]) : null;
+  const ownAvg = ownAll && ownAll[0] > 0 ? (ownAll[1] / ownAll[0]) * 100 : setMean + TUNING.ownAboveMean;
+  const fb = file?.fallback ?? TUNING.splashFallback;
+  const K = TUNING.splashGames;
+  const KR = TUNING.splashBuilds;
+  const splashOk: boolean[][] = [];
+  const splashQ: number[][] = [];
+  const splashRate: number[][] = [];
+  PAIRS.forEach((pair, pi) => {
+    const pm = PAIR_MASKS[pi];
+    const own = file?.onColor[pair] && file.onColor[pair][0] >= 200 ? (file.onColor[pair][1] / file.onColor[pair][0]) * 100 : ownAvg;
+    const ok: boolean[] = [];
+    const qs: number[] = [];
+    const rs: number[] = [];
+    cards.forEach((card, ix) => {
+      const off = fitMask[ix] & ~pm;
+      // One color away (and not a land): the only cards a splash is about.
+      if (!off || off & (off - 1) || /Land/.test(card.type)) {
+        ok.push(false); qs.push(NaN); rs.push(NaN);
+        return;
+      }
+      const removal = roles[ix].some((r) => INTERACTION.includes(r));
+      const cheap = card.mv <= 2 && !removal;
+      const twoPips = Math.max(...pips[ix]) >= 2;
+      const prior = own + fb[0] + fb[1] * (gih[ix] - own) + (cheap ? fb[2] : 0) + (removal ? fb[3] : 0) + (twoPips ? fb[4] : 0);
+      const data = file?.cards[card.name];
+      const a = data?.all;
+      const p = data?.pairs[pair];
+      const cardQ = a ? (a[5] * 100 + K * prior) / (a[4] + K) : prior;
+      const q = p ? (p[5] * 100 + K * cardQ) / (p[4] + K) : cardQ;
+      // Revealed preference: strong players' splash rate (all players' where strong ones are few).
+      const rateOf = (c: number[]) => (c[2] >= 10 ? [c[3], c[2]] : [c[1], c[0]]);
+      let rate = NaN;
+      if (a) {
+        const [sa, na] = rateOf(a);
+        const cardRate = (sa + KR * 0.3) / (na + KR);
+        if (p) {
+          const [sp, np] = rateOf(p);
+          rate = (sp + KR * cardRate) / (np + KR);
+        } else rate = cardRate;
+      }
+      const worth = q - own;
+      ok.push(worth >= TUNING.splashWorth && (Number.isNaN(rate) || rate >= TUNING.splashRate));
+      qs.push(q);
+      rs.push(rate);
+    });
+    splashOk.push(ok);
+    splashQ.push(qs);
+    splashRate.push(rs);
+  });
+  return { splashOk, splashQ, splashRate };
+}
+
+/** A card's value as a splash in a pair's decks (its expected win rate when drawn), or null if it is not worth splashing there. */
+export function splashValue(model: CoachModel, ix: number, pair: string): number | null {
+  const pi = PAIRS.indexOf(sortPair(pair));
+  if (pi < 0 || !model.splashOk[pi][ix]) return null;
+  return model.splashQ[pi][ix];
+}
+
+/** How often strong players splash a card in a pair's decks when they can (NaN without data). */
+export function splashRateIn(model: CoachModel, ix: number, pair: string): number {
+  const pi = PAIRS.indexOf(sortPair(pair));
+  return pi < 0 ? NaN : model.splashRate[pi][ix];
 }
 
 export type PairOdds = { pair: string; p: number }[];
@@ -276,16 +409,15 @@ export function shapeTax(model: CoachModel, shape: DeckShape, fixers: number): n
 
 /**
  * How a card plays in a shape: 1 = in the deck's colors, 2 = as a splash card
- * (needs the splash color, at most one symbol of it), 0 = not castable.
+ * (needs the splash color, and the splash data says it is worth it in that pair), 0 = not.
  */
 export function roleIn(model: CoachModel, ix: number, shape: DeckShape): 0 | 1 | 2 {
   const f = model.fitMask[ix];
   if ((f & ~shape.mask) !== 0) return 0;
   if (shape.kind !== 'splash' || (f & ~shape.coreMask) === 0) return 1;
   if (/Land/.test(model.cards[ix].type)) return 1;
-  // Only a good card is worth splashing, and only with one symbol of the splash color.
-  if (model.gih[ix] < model.setMean + TUNING.splashAbove) return 0;
-  return model.pips[ix][COLORS.indexOf(shape.splash as (typeof COLORS)[number])] <= 1 ? 2 : 0;
+  // Worth splashing in THIS pair's decks, per the data (or the fallback model).
+  return model.splashOk[PAIRS.indexOf(shape.core)][ix] ? 2 : 0;
 }
 
 /** How strongly one card pulls you toward the colors it is in (log-odds). */
@@ -295,6 +427,11 @@ function weight(model: CoachModel, ix: number): number {
 
 /** A card's win rate in a shape: in its main pair's decks, or the best pair of the shape it fits. */
 function qualityIn(model: CoachModel, ix: number, shape: DeckShape): number {
+  // A splash card is worth what it did when splashed in this pair's decks.
+  if (shape.kind === 'splash' && (model.fitMask[ix] & ~shape.coreMask) !== 0) {
+    const q = model.splashQ[PAIRS.indexOf(shape.core)][ix];
+    if (!Number.isNaN(q)) return q;
+  }
   if (shape.core) return model.gihPair[shape.core][ix];
   let best = -Infinity;
   PAIRS.forEach((p, i) => {
@@ -328,6 +465,8 @@ function makesCut(model: CoachModel, g: number, better: number[], picksLeft: num
 
 export type ShapeState = {
   strength: number[];
+  /** Each shape's main pair as a color mask: its own colors for a pair, the core for a splash, the strongest pair inside a 3-4 color deck. */
+  mainMask: number[];
   /** Win rates of the pool's spells that play in each shape (main colors), best first. */
   spellGih: number[][];
   /** The win rate a new splash card must beat to make the cut (3 splash cards max). */
@@ -338,6 +477,7 @@ export type ShapeState = {
 /** Every shape's log-odds strength from your pool so far, plus what each one costs. */
 export function shapeState(model: CoachModel, pool: number[], flow?: Record<string, number>): ShapeState {
   const strength: number[] = [];
+  const mainMask: number[] = [];
   const splashCut: number[] = [];
   const tax: number[] = [];
   const spellGih: number[][] = [];
@@ -369,10 +509,19 @@ export function shapeState(model: CoachModel, pool: number[], flow?: Record<stri
     const fixers = shapeFixers(model, pool, shape);
     if (shape.kind !== 'pair') s += TUNING.shapePenalty[shape.kind][packOf(pool.length)][fixerBucket(fixers)];
     strength.push(s);
+    // Pairs come first in SHAPES, so their strengths are known by the time a 3-4 color shape asks.
+    let mainPair = shape.coreMask;
+    if (shape.kind === 'three' || shape.kind === 'four') {
+      let best = -Infinity;
+      PAIR_MASKS.forEach((m, j) => {
+        if ((m & ~shape.mask) === 0 && strength[j] > best) { best = strength[j]; mainPair = m; }
+      });
+    }
+    mainMask.push(mainPair);
     splashCut.push(splashG.length >= SPLASH_MAX ? splashG[SPLASH_MAX - 1] : -Infinity);
     tax.push(shapeTax(model, shape, fixers));
   }
-  return { strength, spellGih, splashCut, tax };
+  return { strength, mainMask, spellGih, splashCut, tax };
 }
 
 function softmaxShapes(strength: number[]): number[] {
@@ -462,14 +611,17 @@ export function evaluatePack(
     const basic = BASICS.has(card.name);
     const w = weight(model, ix);
     const roles = SHAPES.map((shape) => roleIn(model, ix, shape));
+    // Outside a shape's main pair (splash or third color), a card plays less often than one in it.
+    const isLand = /Land/.test(card.type);
+    const share = SHAPES.map((_, i) => (isLand || (model.fitMask[ix] & ~state.mainMask[i]) === 0 ? 1 : TUNING.thirdPlay));
     // "If I take this": the card pulls you toward the shapes it plays in (and a
     // fixer makes the shapes it fixes cheaper), which raises its own chance of
     // making the deck: this is what lets a gold card or a dual land count.
     let p = p0;
     if (TUNING.lookahead) {
       const s = state.strength.map((v, i) => {
-        let x = v + (roles[i] ? w : 0);
         const shape = SHAPES[i];
+        let x = v + (roles[i] ? w * share[i] : 0);
         if (newFixer(ix) && shape.kind !== 'pair') {
           const before = shapeFixers(model, pool, shape);
           const after = shapeFixers(model, [...pool, ix], shape);
@@ -490,12 +642,13 @@ export function evaluatePack(
       const r = roles[i];
       const spell = !/Land/.test(card.type);
       const cut = spell ? makesCut(model, model.gih[ix], state.spellGih[i], picksLeft) : 1;
-      const chance = r === 1 ? cut : r === 2 && model.gih[ix] > state.splashCut[i] ? cut : TUNING.offColor;
+      const playable = r === 1 || (r === 2 && model.gih[ix] > state.splashCut[i]);
+      const chance = playable ? Math.max(TUNING.offColor, cut * share[i]) : TUNING.offColor;
       const q = qualityIn(model, ix, shape);
       // A card worse than filler would not make the deck anyway. Basic lands are
       // free and unlimited: always below any real card. Every deck pays its shape's price.
       const value = basic ? mean - 3 : Math.max(q, mean);
-      ev += pi * ((basic ? value : chance * value + (1 - chance) * mean) - state.tax[i]);
+      ev += pi * ((basic ? value : chance * value + (1 - chance) * mean) - state.tax[i] * TUNING.shapeCostSpells);
       const counts = chance * (q > mean ? 1 : 0);
       play += pi * counts;
       if (r === 2) playSplash += pi * counts;

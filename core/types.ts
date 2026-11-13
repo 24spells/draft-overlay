@@ -56,9 +56,10 @@ export type LoadedStats = { stats: SetStats; note: string | null };
 /**
  * The web trainer's files for one set (from 23spells.pages.dev), for the coach
  * hint: the set file (cards with text, plus stats), the flow baseline, and
- * the measured deck-shape prices. Flow and prices may be missing.
+ * the measured deck-shape prices, and what is worth splashing per color pair.
+ * Flow, prices and splash data may be missing (new sets).
  */
-export type CoachData = { set: unknown; flow: unknown | null; builds: unknown | null };
+export type CoachData = { set: unknown; flow: unknown | null; builds: unknown | null; splash?: unknown | null };
 
 /** Everything the overlay needs from its host: the real app or the preview. */
 export type OverlayApi = {
