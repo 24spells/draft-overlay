@@ -1,0 +1,157 @@
+html,
+body {
+  height: 100%;
+  margin: 0;
+  overflow: hidden;
+  background: #14110f;
+  color: #f4f5f7;
+  font-family: Inter, ui-sans-serif, 'Segoe UI', sans-serif;
+}
+
+#stage {
+  position: fixed;
+  inset: 0;
+  background:
+    radial-gradient(ellipse at 40% 30%, #4a3a2a 0%, transparent 65%),
+    linear-gradient(160deg, #2a2119, #120f0d);
+}
+
+.sim-tag {
+  position: absolute;
+  top: 2.2vh;
+  left: 50%;
+  padding: 5px 14px;
+  border-radius: 7px;
+  background: rgb(0 0 0 / 55%);
+  font-size: clamp(12px, 0.85vw, 20px);
+  font-weight: 700;
+  transform: translateX(-50%);
+}
+
+.sim-card {
+  position: absolute;
+  overflow: hidden;
+  border-radius: 4.5% / 3.2%;
+  background: #30343b;
+  box-shadow: 0 4px 12px rgb(0 0 0 / 55%);
+  transition: transform 110ms ease;
+}
+
+.sim-card:hover {
+  z-index: 5;
+  transform: scale(1.35);
+}
+
+.sim-card.taken {
+  outline: 3px solid #f2d06b;
+  outline-offset: 2px;
+}
+
+.sim-card img {
+  display: block;
+  width: 100%;
+  height: 100%;
+}
+
+.sim-tile {
+  display: flex;
+  height: 100%;
+  flex-direction: column;
+  justify-content: space-between;
+  padding: 8%;
+  font-size: clamp(11px, 0.75vw, 18px);
+  font-weight: 700;
+}
+
+.sim-tile small {
+  color: rgb(255 255 255 / 60%);
+  font-weight: 500;
+}
+
+.sim-pool {
+  position: absolute;
+  top: 7vh;
+  right: 1vw;
+  bottom: 9vh;
+  width: 26vw;
+  overflow: hidden;
+  padding: 12px 16px;
+  border-radius: 10px;
+  background: rgb(0 0 0 / 40%);
+  font-size: clamp(11px, 0.72vw, 17px);
+}
+
+.sim-pool h2 {
+  margin: 0 0 8px;
+  font-size: 1.15em;
+}
+
+.sim-pool ul {
+  margin: 0;
+  padding: 0;
+  columns: 2;
+  list-style: none;
+}
+
+.sim-pool li {
+  overflow: hidden;
+  padding: 1px 0;
+  color: rgb(255 255 255 / 80%);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+#bar {
+  position: fixed;
+  bottom: 1.4vh;
+  left: 50%;
+  z-index: 20;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 7px 12px;
+  border: 1px solid rgb(255 255 255 / 30%);
+  border-radius: 10px;
+  background: rgb(15 18 22 / 94%);
+  font-size: clamp(12px, 0.8vw, 18px);
+  transform: translateX(-50%);
+}
+
+#bar button,
+#bar select {
+  padding: 5px 11px;
+  border: 1px solid rgb(255 255 255 / 35%);
+  border-radius: 6px;
+  background: #242932;
+  color: inherit;
+  font: inherit;
+  font-weight: 700;
+}
+
+#bar button {
+  cursor: pointer;
+}
+
+#bar button:hover {
+  border-color: #f2d06b;
+}
+
+#bar .position {
+  min-width: 8.5em;
+  font-weight: 800;
+  text-align: center;
+}
+
+#bar .hint {
+  color: rgb(255 255 255 / 60%);
+}
+
+.sim-error {
+  position: fixed;
+  inset: 20vh 20vw auto;
+  z-index: 30;
+  padding: 20px;
+  border-radius: 10px;
+  background: #5b2020;
+  font-size: 18px;
+}

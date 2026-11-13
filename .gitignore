@@ -160,3 +160,14 @@ vite.config.ts.timestamp-*
 
 # Electron-Forge
 out/
+
+# Draft overlay: generated data and personal replays
+card-data/raw/
+card-data/*.PremierDraft.json
+card-data/*.QuickDraft.json
+sim-data/
+app/build/
+saved-drafts/
+
+# Installer output
+dist/
