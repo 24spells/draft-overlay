@@ -674,3 +674,28 @@
   color: #8fdccb;
   font-size: 0.86em;
 }
+
+/* Ranked coach picks: the number sits on the outline's top-left corner; #1 glows brighter. */
+.coach-outline.first {
+  box-shadow: 0 0 0 calc(var(--u) * 4) #8fdccb, 0 0 calc(var(--u) * 28) rgb(143 220 203 / 75%);
+}
+
+.coach-rank {
+  position: absolute;
+  top: calc(var(--u) * -12);
+  left: calc(var(--u) * -12);
+  display: grid;
+  place-items: center;
+  width: calc(var(--u) * 34);
+  height: calc(var(--u) * 34);
+  border-radius: 50%;
+  background: #5eb3a2;
+  color: #0c0e12;
+  font-size: calc(var(--u) * 20);
+  font-weight: 900;
+  box-shadow: 0 calc(var(--u) * 2) calc(var(--u) * 6) rgb(0 0 0 / 60%);
+}
+
+.coach-outline.first .coach-rank {
+  background: #8fdccb;
+}

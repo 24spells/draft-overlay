@@ -72,11 +72,17 @@ export class PackMemory {
 /** 0-based overall pick, the trainer's round x 14 + pick. */
 export const overallPick = (view: DraftView) => (view.packNumber - 1) * 14 + (view.pickNumber - 1);
 
-/**
- * The Arena card ids the coach outlines: the top 3 by the engine's evaluation
- * (never the whole pack: the last card alone is not a hint), like the trainer.
- */
+/** The coach's top 3, as a set of Arena card ids (the trainer's unranked hint). */
 export function topThree(coach: Coach, view: DraftView, names: (id: number) => string | undefined, memory: PackMemory): Set<number> {
+  return new Set(coachRanks(coach, view, names, memory, 3).keys());
+}
+
+/**
+ * The coach's top picks in the pack, best first: Arena card id -> rank (1 = best;
+ * copies of the same card share a rank). Never the whole pack (the last card is
+ * not a hint), like the trainer's top 3.
+ */
+export function coachRanks(coach: Coach, view: DraftView, names: (id: number) => string | undefined, memory: PackMemory, count = 3): Map<number, number> {
   const index = (id: number) => {
     const name = names(id);
     return name === undefined ? undefined : coach.byName.get(name);
@@ -91,7 +97,7 @@ export function topThree(coach: Coach, view: DraftView, names: (id: number) => s
   }
   memory.record(view, pack);
   if (pack.length < 2) {
-    return new Set();
+    return new Map();
   }
   const pool = view.pickedCardIds.map(index).filter((ix): ix is number => ix !== undefined);
   const round = view.packNumber - 1;
@@ -105,6 +111,10 @@ export function topThree(coach: Coach, view: DraftView, names: (id: number) => s
       )
     : undefined;
   const { evals } = evaluatePack(coach.model, pack, pool, overallPick(view), flow);
-  const top = evals.slice(0, Math.min(3, evals.length - 1)).map((e) => e.index);
-  return new Set(top.flatMap((ix) => idsByIndex.get(ix) ?? []));
+  const ranks = new Map<number, number>();
+  const top = [...new Set(evals.map((e) => e.index))].slice(0, Math.min(count, evals.length - 1));
+  top.forEach((ix, k) => {
+    for (const id of idsByIndex.get(ix) ?? []) ranks.set(id, k + 1);
+  });
+  return ranks;
 }

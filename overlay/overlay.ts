@@ -1,7 +1,7 @@
 // The on-screen overlay. Plain DOM with no framework, so the same code runs
 // in the browser preview and in the real app.
 
-import { createCoach, topThree, PackMemory, type Coach } from './coach-hint.ts';
+import { coachRanks, createCoach, PackMemory, type Coach } from './coach-hint.ts';
 import { gradeScore } from '../core/grades.ts';
 import {
   cardRect,
@@ -45,8 +45,12 @@ type Settings = {
   showStats: boolean;
   /** The ▼ Close button. Folded leaves one small tab on screen. */
   folded: boolean;
-  /** The Coach ON/OFF button: outline the coach's top 3, like the 23spells hint. On by default. */
+  /** The Coach ON/OFF button: outline the coach's top picks, like the 23spells hint. On by default. */
   coachHint: boolean;
+  /** Ranked shows 1, 2, 3 on the outlined cards; outline only is the trainer's unranked hint (your call). */
+  coachStyle: 'ranked' | 'outline';
+  /** How many top picks to mark. */
+  coachCount: number;
 };
 
 const DEFAULTS: Settings = {
@@ -62,6 +66,8 @@ const DEFAULTS: Settings = {
   showStats: true,
   folded: false,
   coachHint: true,
+  coachStyle: 'ranked',
+  coachCount: 3,
 };
 
 const FORMAT_NAMES: Record<string, string> = {
@@ -156,7 +162,8 @@ export function mountOverlay(root: HTMLElement, api: OverlayApi): void {
   /** The web trainer's coach for the set in front of you (null until loaded, or if the site has no such set). */
   let coach: Coach | null = null;
   let coachFor = '';
-  let coachTop = new Set<number>();
+  /** Arena card id -> the coach's rank for it (1 = best), for the pack on screen. */
+  let coachTop = new Map<number, number>();
   const packMemory = new PackMemory();
 
   root.classList.add('draft-overlay');
@@ -311,8 +318,12 @@ export function mountOverlay(root: HTMLElement, api: OverlayApi): void {
     for (const { card, column, row } of positionCards(cards)) {
       const rect = cardRect(column, row, geometry);
       if (outlines && coachTop.has(card.id)) {
-        // The coach's top 3, outlined in no order (the trainer's hint look).
-        const ring = element('div', 'coach-outline');
+        // The coach's top picks: outlined (the trainer's hint look), ranked if chosen.
+        const rank = coachTop.get(card.id)!;
+        const ring = element('div', `coach-outline${rank === 1 && settings.coachStyle === 'ranked' ? ' first' : ''}`);
+        if (settings.coachStyle === 'ranked') {
+          ring.append(element('span', 'coach-rank', String(rank)));
+        }
         ring.style.left = `${rect.left}px`;
         ring.style.top = `${rect.top}px`;
         ring.style.width = `${rect.width}px`;
@@ -363,7 +374,9 @@ export function mountOverlay(root: HTMLElement, api: OverlayApi): void {
       ? `${activeDeck().label}. EARLY DATA from 17Lands.com (no public file yet): win rates under 500 games are hidden, no color-pair or top-player splits. Updated ${through}.`
       : `${activeDeck().label}. Data: 17Lands public dataset, CC BY 4.0. Games through ${through}.`;
     if (settings.coachHint) {
-      credit.textContent += coach ? " Coach's top 3 outlined (23spells coach)." : ' Coach hint: no 23spells data for this set yet.';
+      credit.textContent += coach
+        ? ` Coach's top ${settings.coachCount} ${settings.coachStyle === 'ranked' ? 'ranked' : 'outlined'} (23spells coach).`
+        : ' Coach hint: no 23spells data for this set yet.';
     }
   }
 
@@ -439,7 +452,15 @@ export function mountOverlay(root: HTMLElement, api: OverlayApi): void {
       );
     }
     if (settings.coachHint && coachTop.has(hovered.id)) {
-      hoverPanel.append(element('p', 'hover-coach', "One of the coach's top 3 picks (in no order). Your call."));
+      hoverPanel.append(
+        element(
+          'p',
+          'hover-coach',
+          settings.coachStyle === 'ranked'
+            ? `The coach's #${coachTop.get(hovered.id)} pick here.`
+            : `One of the coach's top ${settings.coachCount} picks (in no order). Your call.`,
+        ),
+      );
     }
   }
 
@@ -666,7 +687,17 @@ export function mountOverlay(root: HTMLElement, api: OverlayApi): void {
       reset,
     ]);
 
-    panel.append(head, preview, onCard, grades, lineUp);
+    const coachSection = section('Coach', [
+      settingRow('Picks marked', segmented(settings.coachStyle, [['ranked', 'Ranked 1-2-3'], ['outline', 'Outline only']], (value) => {
+        settings.coachStyle = value as Settings['coachStyle'];
+      }), "Outline only is the trainer's hint: the top picks in no order, your call"),
+      settingRow('How many', segmented(String(settings.coachCount), [['1', '1'], ['3', '3'], ['5', '5']], (value) => {
+        settings.coachCount = Number(value);
+        updateCoachTop();
+      })),
+    ]);
+
+    panel.append(head, preview, onCard, coachSection, grades, lineUp);
   }
 
   function section(title: string, rows: HTMLElement[]): HTMLElement {
@@ -739,12 +770,12 @@ export function mountOverlay(root: HTMLElement, api: OverlayApi): void {
 
   /** The coach's top 3 for the pack in front of you; never lets a coach error take the stats down. */
   function updateCoachTop(): void {
-    coachTop = new Set();
+    coachTop = new Map();
     if (!coach || !view || !loaded) {
       return;
     }
     try {
-      coachTop = topThree(coach, view, (id) => loaded?.stats.cards[String(id)]?.name, packMemory);
+      coachTop = coachRanks(coach, view, (id) => loaded?.stats.cards[String(id)]?.name, packMemory, settings.coachCount);
     } catch (error) {
       console.error('Coach hint failed', error);
     }
