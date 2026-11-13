@@ -699,3 +699,91 @@
 .coach-outline.first .coach-rank {
   background: #8fdccb;
 }
+
+/* Value gap under a ranked mark: how far behind #1. */
+.coach-gap {
+  position: absolute;
+  top: calc(var(--u) * -8);
+  left: calc(var(--u) * 26);
+  padding: calc(var(--u) * 1) calc(var(--u) * 5);
+  border-radius: calc(var(--u) * 6);
+  background: rgb(12 14 18 / 90%);
+  color: #cfe9e3;
+  font-size: calc(var(--u) * 12);
+  font-weight: 800;
+  white-space: nowrap;
+}
+
+/* Stack rows: your colors, your accuracy. */
+.coach-colors,
+.coach-grade {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  white-space: normal;
+  line-height: 1.2;
+}
+
+.coach-row-main {
+  font-weight: 700;
+}
+
+.coach-row-sub {
+  font-size: 0.86em;
+  opacity: 0.85;
+}
+
+/* The grade after each pick, top center, click-through. */
+.pick-toast {
+  --c: #9ca3af;
+  position: fixed;
+  top: 6vh;
+  left: 50%;
+  z-index: 30;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  max-width: min(560px, 90vw);
+  padding: 8px 18px 8px 8px;
+  border: 2px solid color-mix(in srgb, var(--c) 65%, transparent);
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--c) 20%, #14171d);
+  box-shadow: 0 10px 30px rgb(0 0 0 / 55%);
+  opacity: 0;
+  transform: translate(-50%, -12px);
+  transition: opacity 200ms ease, transform 200ms ease;
+  pointer-events: none;
+}
+
+.pick-toast.visible {
+  opacity: 1;
+  transform: translate(-50%, 0);
+}
+
+.toast-glyph {
+  display: grid;
+  flex: none;
+  place-items: center;
+  width: 40px;
+  height: 40px;
+  border-radius: 50%;
+  background: var(--c);
+  color: #fff;
+  font-size: 18px;
+  font-weight: 900;
+}
+
+.toast-text {
+  display: grid;
+  gap: 2px;
+  font-size: 14px;
+}
+
+.toast-text strong {
+  font-size: 17px;
+  color: color-mix(in srgb, var(--c) 55%, white);
+}
+
+.segmented.multi button.on {
+  background: #2f7f72;
+}

@@ -1,7 +1,7 @@
 // The on-screen overlay. Plain DOM with no framework, so the same code runs
 // in the browser preview and in the real app.
 
-import { coachRanks, createCoach, PackMemory, type Coach } from './coach-hint.ts';
+import { coachRead, createCoach, gradeTaken, PackMemory, type Coach, type CoachRead, type PackInput, type PickResult } from './coach-hint.ts';
 import { gradeScore } from '../core/grades.ts';
 import {
   cardRect,
@@ -51,6 +51,14 @@ type Settings = {
   coachStyle: 'ranked' | 'outline';
   /** How many top picks to mark. */
   coachCount: number;
+  /** Live: marks on the pack. After you pick: no marks; the coach's pick and your grade show once you have chosen (training). */
+  coachMode: 'live' | 'after';
+  /** On ranked marks, how far each pick is behind #1 (win-rate points). */
+  coachGaps: boolean;
+  /** A stack row with your likely colors and the chance of a splash or 3+ colors. */
+  coachColors: boolean;
+  /** After each pick: a chess-style grade, and the draft's running accuracy. */
+  coachGrades: boolean;
 };
 
 const DEFAULTS: Settings = {
@@ -68,7 +76,16 @@ const DEFAULTS: Settings = {
   coachHint: true,
   coachStyle: 'ranked',
   coachCount: 3,
+  coachMode: 'live',
+  coachGaps: true,
+  coachColors: true,
+  coachGrades: true,
 };
+
+const BADGE_GLYPH: Record<string, string> = { Best: '★', Excellent: '!', Good: '✓', Inaccuracy: '?!', Mistake: '?', Blunder: '??' };
+const BADGE_COLOR: Record<string, string> = { Best: '#81b64c', Excellent: '#5eb3a2', Good: '#95b776', Inaccuracy: '#f2c037', Mistake: '#ff9a47', Blunder: '#f2493a' };
+/** A pair in the usual WUBRG order: "UB", not the sorted "BU". */
+const wubrg = (colors: string) => [...colors].sort((a, b) => 'WUBRG'.indexOf(a) - 'WUBRG'.indexOf(b)).join('');
 
 const FORMAT_NAMES: Record<string, string> = {
   PremierDraft: 'Premier',
@@ -162,8 +179,14 @@ export function mountOverlay(root: HTMLElement, api: OverlayApi): void {
   /** The web trainer's coach for the set in front of you (null until loaded, or if the site has no such set). */
   let coach: Coach | null = null;
   let coachFor = '';
-  /** Arena card id -> the coach's rank for it (1 = best), for the pack on screen. */
-  let coachTop = new Map<number, number>();
+  /** Arena card id -> the coach's rank for it (1 = best) and points behind #1, for the pack on screen. */
+  let coachTop = new Map<number, { rank: number; gap: number }>();
+  let coachView: CoachRead | null = null;
+  /** The last pack the coach read, to grade the pick you make from it. */
+  let lastInput: PackInput | null = null;
+  /** This draft's graded picks (for the running accuracy). */
+  let grades: { draftId: string | null; results: PickResult[] } = { draftId: null, results: [] };
+  let toastTimer: ReturnType<typeof setTimeout> | undefined;
   const packMemory = new PackMemory();
 
   root.classList.add('draft-overlay');
@@ -174,6 +197,9 @@ export function mountOverlay(root: HTMLElement, api: OverlayApi): void {
   const setInfo = element('div', 'stack-row stack-info');
   const statsButton = element('button', 'stack-row stack-button stats-toggle');
   const coachButton = element('button', 'stack-row stack-button stats-toggle coach-toggle');
+  const colorsRow = element('div', 'stack-row stack-info coach-colors');
+  const gradeRow = element('div', 'stack-row stack-info coach-grade');
+  const toast = element('div', 'pick-toast');
   coachButton.title = "Outline the coach's top 3 picks, the same hint as on 23spells";
   const mainLabel = element('label', 'stack-row stack-select');
   const mainSelect = element('select');
@@ -190,9 +216,9 @@ export function mountOverlay(root: HTMLElement, api: OverlayApi): void {
 
   mainLabel.append(element('span', 'stack-label', 'Show'), wrapSelect(mainSelect));
   deckLabel.append(element('span', 'stack-label', 'Compare'), wrapSelect(deckSelect));
-  stack.append(setInfo, statsButton, coachButton, mainLabel, deckLabel, settingsButton, foldButton);
+  stack.append(setInfo, statsButton, coachButton, colorsRow, gradeRow, mainLabel, deckLabel, settingsButton, foldButton);
   controls.append(stack, panel, status, credit);
-  root.append(plates, hoverPanel, controls);
+  root.append(plates, hoverPanel, controls, toast);
 
   option(mainSelect, 'grade', 'Grade');
   METRIC_IDS.forEach((id) => option(mainSelect, id, compactMetric(id)));
@@ -289,7 +315,7 @@ export function mountOverlay(root: HTMLElement, api: OverlayApi): void {
     hovered = null;
     hoverPanel.classList.remove('visible');
 
-    const outlines = settings.coachHint && coachTop.size > 0;
+    const outlines = settings.coachHint && settings.coachMode === 'live' && coachTop.size > 0;
     if (!view || !loaded || hidden || (!settings.showStats && !outlines)) {
       return;
     }
@@ -319,10 +345,14 @@ export function mountOverlay(root: HTMLElement, api: OverlayApi): void {
       const rect = cardRect(column, row, geometry);
       if (outlines && coachTop.has(card.id)) {
         // The coach's top picks: outlined (the trainer's hint look), ranked if chosen.
-        const rank = coachTop.get(card.id)!;
+        const { rank, gap } = coachTop.get(card.id)!;
         const ring = element('div', `coach-outline${rank === 1 && settings.coachStyle === 'ranked' ? ' first' : ''}`);
         if (settings.coachStyle === 'ranked') {
           ring.append(element('span', 'coach-rank', String(rank)));
+          // How far behind #1: a near tie reads as one, a clear gap as a clear gap.
+          if (settings.coachGaps && rank > 1) {
+            ring.append(element('span', 'coach-gap', gap < 0.5 ? '≈ #1' : `-${gap.toFixed(1)}`));
+          }
         }
         ring.style.left = `${rect.left}px`;
         ring.style.top = `${rect.top}px`;
@@ -457,7 +487,7 @@ export function mountOverlay(root: HTMLElement, api: OverlayApi): void {
           'p',
           'hover-coach',
           settings.coachStyle === 'ranked'
-            ? `The coach's #${coachTop.get(hovered.id)} pick here.`
+            ? `The coach's #${coachTop.get(hovered.id)!.rank} pick here${coachTop.get(hovered.id)!.rank > 1 ? `, ${coachTop.get(hovered.id)!.gap.toFixed(1)} win-rate points behind #1` : ''}.`
             : `One of the coach's top ${settings.coachCount} picks (in no order). Your call.`,
         ),
       );
@@ -470,6 +500,7 @@ export function mountOverlay(root: HTMLElement, api: OverlayApi): void {
     for (const row of [setInfo, statsButton, coachButton, mainLabel, deckLabel, settingsButton]) {
       row.hidden = folded;
     }
+    renderCoachRows(folded);
     foldButton.textContent = folded ? '▲ Overlay' : '▼ Close';
     foldButton.title = folded ? 'Open the overlay controls' : 'Fold the overlay controls';
 
@@ -539,6 +570,21 @@ export function mountOverlay(root: HTMLElement, api: OverlayApi): void {
       button.type = 'button';
       button.setAttribute('aria-pressed', String(optionValue === value));
       button.addEventListener('click', () => commit(() => onChange(optionValue)));
+      group.append(button);
+    }
+    return group;
+  }
+
+  /** On/off buttons for boolean settings, any combination. */
+  function toggles(items: [keyof Settings, string, string][]): HTMLElement {
+    const group = element('div', 'segmented multi');
+    for (const [key, label, title] of items) {
+      const on = Boolean(settings[key]);
+      const button = element('button', on ? 'on' : undefined, label);
+      button.type = 'button';
+      button.title = title;
+      button.setAttribute('aria-pressed', String(on));
+      button.addEventListener('click', () => commit(() => { (settings as Record<string, unknown>)[key] = !settings[key]; }));
       group.append(button);
     }
     return group;
@@ -688,13 +734,21 @@ export function mountOverlay(root: HTMLElement, api: OverlayApi): void {
     ]);
 
     const coachSection = section('Coach', [
-      settingRow('Picks marked', segmented(settings.coachStyle, [['ranked', 'Ranked 1-2-3'], ['outline', 'Outline only']], (value) => {
+      settingRow('Show picks', segmented(settings.coachMode, [['live', 'Live'], ['after', 'After you pick']], (value) => {
+        settings.coachMode = value as Settings['coachMode'];
+      }), "After you pick: no marks on the pack; you choose first, then see the coach's pick and your grade"),
+      settingRow('Marks', segmented(settings.coachStyle, [['ranked', 'Ranked 1-2-3'], ['outline', 'Outline only']], (value) => {
         settings.coachStyle = value as Settings['coachStyle'];
       }), "Outline only is the trainer's hint: the top picks in no order, your call"),
       settingRow('How many', segmented(String(settings.coachCount), [['1', '1'], ['3', '3'], ['5', '5']], (value) => {
         settings.coachCount = Number(value);
         updateCoachTop();
       })),
+      settingRow('Also show', toggles([
+        ['coachGaps', 'Gaps', 'On ranked marks: win-rate points behind #1'],
+        ['coachColors', 'Colors', 'Your likely colors in the stack'],
+        ['coachGrades', 'Grades', 'A grade after each pick, and your accuracy'],
+      ])),
     ]);
 
     panel.append(head, preview, onCard, coachSection, grades, lineUp);
@@ -771,13 +825,91 @@ export function mountOverlay(root: HTMLElement, api: OverlayApi): void {
   /** The coach's top 3 for the pack in front of you; never lets a coach error take the stats down. */
   function updateCoachTop(): void {
     coachTop = new Map();
+    coachView = null;
     if (!coach || !view || !loaded) {
       return;
     }
     try {
-      coachTop = coachRanks(coach, view, (id) => loaded?.stats.cards[String(id)]?.name, packMemory, settings.coachCount);
+      const names = (id: number) => loaded?.stats.cards[String(id)]?.name;
+      // The pick you just made, from the pack the coach read last time.
+      if (lastInput) {
+        const result = gradeTaken(coach, lastInput, view, names);
+        if (result) {
+          if (grades.draftId !== view.draftId) grades = { draftId: view.draftId, results: [] };
+          grades.results.push(result);
+          showToast(result);
+        }
+      }
+      coachView = coachRead(coach, view, names, packMemory, settings.coachCount);
+      coachTop = coachView.ranks;
+      if (coachView.input) lastInput = coachView.input;
     } catch (error) {
       console.error('Coach hint failed', error);
+    }
+  }
+
+  /** The grade for the pick just made (and, after-you-pick mode, what the coach would have taken). */
+  function showToast(result: PickResult): void {
+    if (!settings.coachHint || (!settings.coachGrades && settings.coachMode !== 'after')) {
+      return;
+    }
+    toast.textContent = '';
+    const color = BADGE_COLOR[result.badge] ?? '#9ca3af';
+    toast.style.setProperty('--c', color);
+    const glyph = element('span', 'toast-glyph', BADGE_GLYPH[result.badge] ?? '');
+    const text = element('span', 'toast-text');
+    text.append(element('strong', undefined, settings.coachGrades ? `${result.badge}${result.loss >= 0.05 ? `, -${result.loss.toFixed(1)}` : ''}` : 'Your pick'));
+    const same = result.best === result.taken;
+    text.append(
+      element(
+        'span',
+        undefined,
+        same
+          ? `You took the coach's pick: ${result.taken}.`
+          : result.badge === 'Best'
+            ? `A near tie with the coach's pick, ${result.best}. You took ${result.taken}.`
+            : `Coach's pick: ${result.best}. You took ${result.taken}.`,
+      ),
+    );
+    toast.append(glyph, text);
+    toast.classList.remove('visible');
+    void toast.offsetWidth;
+    toast.classList.add('visible');
+    clearTimeout(toastTimer);
+    toastTimer = setTimeout(() => toast.classList.remove('visible'), 4500);
+  }
+
+  /** Stack rows: your likely colors, and this draft's accuracy so far. */
+  function renderCoachRows(folded: boolean): void {
+    const inDraft = Boolean(view) && settings.coachHint && Boolean(coach);
+    const odds = coachView?.odds ?? [];
+    const showColors = inDraft && settings.coachColors && odds.length > 0 && (view ? view.pickedCardIds.length >= 3 : false);
+    colorsRow.hidden = folded || !showColors;
+    if (showColors) {
+      const top = odds.filter((o) => o.p >= 0.1).slice(0, 2);
+      const wide = (coachView?.shapes ?? []).filter((s) => s.shape.kind !== 'pair');
+      const wideP = wide.reduce((a, s) => a + s.p, 0);
+      colorsRow.textContent = '';
+      colorsRow.append(element('span', 'coach-row-main', top.map((o) => `${wubrg(o.pair)} ${Math.round(o.p * 100)}%`).join(' · ') || 'Colors open'));
+      if (wideP >= 0.15 && wide[0]) {
+        const sh = wide[0].shape;
+        const label = sh.kind === 'splash' ? `${wubrg(sh.core)}+${sh.splash.toLowerCase()}` : wubrg(sh.colors);
+        colorsRow.append(element('span', 'coach-row-sub', `Splash or 3+: ${Math.round(wideP * 100)}% (${label})`));
+      }
+      colorsRow.title = 'Your likely colors, from your picks and what is flowing (23spells coach)';
+    }
+    const results = grades.draftId === view?.draftId ? grades.results : [];
+    const showGrade = inDraft && settings.coachGrades && results.length > 0;
+    gradeRow.hidden = folded || !showGrade;
+    if (showGrade) {
+      const accuracy = results.reduce((a, r) => a + r.accuracy, 0) / results.length;
+      const last = results[results.length - 1];
+      gradeRow.textContent = '';
+      gradeRow.append(element('span', 'coach-row-main', `Accuracy ${Math.round(accuracy)} · ${results.length} pick${results.length === 1 ? '' : 's'}`));
+      const lastSpan = element('span', 'coach-row-sub', `Last: ${BADGE_GLYPH[last.badge]} ${last.badge}`);
+      lastSpan.style.color = BADGE_COLOR[last.badge];
+      gradeRow.append(lastSpan);
+      gradeRow.title = 'Chess-style grades vs the coach, like the 23spells draft review';
     }
   }
 

@@ -4,7 +4,7 @@
 // baseline and shape prices, so the overlay and 23spells agree.
 
 import { buildDraftCards, type DraftCard } from '../coach/bot.ts';
-import { buildCoachModel, evaluatePack, type CoachCard, type CoachModel } from '../coach/engine.ts';
+import { buildCoachModel, evaluatePack, gradePick, type Badge, type CoachCard, type CoachModel, type PairOdds, type ShapeOdds } from '../coach/engine.ts';
 import { feederOf, readFlow, type FlowBaseline } from '../coach/flow.ts';
 import { rateSet } from '../core/stats.ts';
 import type { CoachData, DraftView, SetStats } from '../core/types.ts';
@@ -74,15 +74,32 @@ export const overallPick = (view: DraftView) => (view.packNumber - 1) * 14 + (vi
 
 /** The coach's top 3, as a set of Arena card ids (the trainer's unranked hint). */
 export function topThree(coach: Coach, view: DraftView, names: (id: number) => string | undefined, memory: PackMemory): Set<number> {
-  return new Set(coachRanks(coach, view, names, memory, 3).keys());
+  return new Set(coachRead(coach, view, names, memory, 3).ranks.keys());
 }
 
-/**
- * The coach's top picks in the pack, best first: Arena card id -> rank (1 = best;
- * copies of the same card share a rank). Never the whole pack (the last card is
- * not a hint), like the trainer's top 3.
- */
+/** Back-compat: Arena card id -> rank. */
 export function coachRanks(coach: Coach, view: DraftView, names: (id: number) => string | undefined, memory: PackMemory, count = 3): Map<number, number> {
+  return new Map([...coachRead(coach, view, names, memory, count).ranks].map(([id, r]) => [id, r.rank]));
+}
+
+/** What the engine saw for one pack: enough to grade the pick you then make. */
+export type PackInput = { draftId: string | null; overall: number; pack: number[]; pool: number[]; flow?: Record<string, number>; picked: number[] };
+
+export type CoachRead = {
+  /** Arena card id -> rank (1 = best; copies share a rank) and win-rate points behind #1. */
+  ranks: Map<number, { rank: number; gap: number }>;
+  /** Your likely colors (pairs), and deck shapes (pair, splash, 3-4 colors). */
+  odds: PairOdds;
+  shapes: ShapeOdds;
+  input: PackInput | null;
+};
+
+/**
+ * The coach's read of the pack in front of you: its top picks best first (never
+ * the whole pack: the last card is not a hint), how far each is behind #1, and
+ * your likely colors. The same engine call as the trainer's hint.
+ */
+export function coachRead(coach: Coach, view: DraftView, names: (id: number) => string | undefined, memory: PackMemory, count = 3): CoachRead {
   const index = (id: number) => {
     const name = names(id);
     return name === undefined ? undefined : coach.byName.get(name);
@@ -97,7 +114,7 @@ export function coachRanks(coach: Coach, view: DraftView, names: (id: number) =>
   }
   memory.record(view, pack);
   if (pack.length < 2) {
-    return new Map();
+    return { ranks: new Map(), odds: [], shapes: [], input: null };
   }
   const pool = view.pickedCardIds.map(index).filter((ix): ix is number => ix !== undefined);
   const round = view.packNumber - 1;
@@ -110,11 +127,35 @@ export function coachRanks(coach: Coach, view: DraftView, names: (id: number) =>
         }).colors.map((c) => [c.color, c.score]),
       )
     : undefined;
-  const { evals } = evaluatePack(coach.model, pack, pool, overallPick(view), flow);
-  const ranks = new Map<number, number>();
+  const overall = overallPick(view);
+  const { evals, odds, shapes } = evaluatePack(coach.model, pack, pool, overall, flow);
+  const ranks = new Map<number, { rank: number; gap: number }>();
+  const best = evals[0]?.ev ?? 0;
   const top = [...new Set(evals.map((e) => e.index))].slice(0, Math.min(count, evals.length - 1));
   top.forEach((ix, k) => {
-    for (const id of idsByIndex.get(ix) ?? []) ranks.set(id, k + 1);
+    const gap = best - (evals.find((e) => e.index === ix)?.ev ?? best);
+    for (const id of idsByIndex.get(ix) ?? []) ranks.set(id, { rank: k + 1, gap });
   });
-  return ranks;
+  return { ranks, odds, shapes, input: { draftId: view.draftId, overall, pack, pool, flow, picked: [...view.pickedCardIds] } };
+}
+
+export type PickResult = { badge: Badge; loss: number; accuracy: number; best: string; taken: string };
+
+/**
+ * Grade the pick you made from a pack the coach read: the trainer's chess-style
+ * grade (points given up vs the coach's best, late picks counting half).
+ * `next` is the following pick's view; the taken card is the one new in your picks.
+ */
+export function gradeTaken(coach: Coach, input: PackInput, next: DraftView, names: (id: number) => string | undefined): PickResult | null {
+  if (next.draftId !== input.draftId || overallPick(next) !== input.overall + 1) return null;
+  const left = new Map<number, number>();
+  for (const id of next.pickedCardIds) left.set(id, (left.get(id) ?? 0) + 1);
+  for (const id of input.picked) left.set(id, (left.get(id) ?? 0) - 1);
+  const takenId = [...left].find(([, n]) => n > 0)?.[0];
+  if (takenId === undefined) return null;
+  const name = names(takenId);
+  const taken = name === undefined ? undefined : coach.byName.get(name);
+  if (taken === undefined || !input.pack.includes(taken)) return null;
+  const g = gradePick(coach.model, input.pack, input.pool, input.overall, taken, input.flow);
+  return { badge: g.badge, loss: g.loss, accuracy: g.accuracy, best: coach.model.cards[g.best.index].name, taken: coach.model.cards[taken].name };
 }
