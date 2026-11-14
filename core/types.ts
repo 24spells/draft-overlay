@@ -77,6 +77,8 @@ export type OverlayApi = {
   getReview?: () => Promise<ReviewData | null>;
   /** Opens a 23spells link in the browser (only that site). */
   openReview?: (url: string) => Promise<boolean>;
+  /** The newest recorded Arena run, when the overlay is connected to 23spells (its records survive Arena's log resets). */
+  getLatestRun?: () => Promise<{ set: string | null; course: string } | null>;
 };
 
 export type ReviewData = {

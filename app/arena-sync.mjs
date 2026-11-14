@@ -245,6 +245,20 @@ export function createArenaRecorder({ userDir, logPath, namesFor, onChange = () 
     onChange();
   }
 
+  /** The newest recorded draft (or game), once it is on 23spells. Null when not connected. */
+  async function latest() {
+    if (!state.token) return null;
+    await scanAll();
+    if (!state.name || !existsSync(recDir)) return null;
+    let best = null;
+    for (const name of readdirSync(recDir)) {
+      if (!name.endsWith('.json')) continue;
+      const rec = JSON.parse(readFileSync(path.join(recDir, name), 'utf8'));
+      if ((rec.at ?? 0) > (best?.at ?? -1)) best = rec;
+    }
+    return best ? { set: best.summary?.set ?? null, course: best.course ?? best.id } : null;
+  }
+
   function status() {
     const total = existsSync(recDir) ? readdirSync(recDir).filter((n) => n.endsWith('.json')).length : 0;
     const waiting = state.token ? pendingRecords().length : total;
@@ -257,5 +271,5 @@ export function createArenaRecorder({ userDir, logPath, namesFor, onChange = () 
     if (state.token && !state.name) void sync();
   }, 30_000);
   setTimeout(() => void sync(), 5000);
-  return { scanAll, soon, sync, connect, disconnect, status };
+  return { scanAll, soon, sync, connect, disconnect, status, latest };
 }

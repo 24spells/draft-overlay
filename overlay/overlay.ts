@@ -820,6 +820,13 @@ export function mountOverlay(root: HTMLElement, api: OverlayApi): void {
     if (!api.getReview || !api.openReview) return;
     reviewButton.textContent = 'Opening...';
     try {
+      // Connected to 23spells: open the newest recorded run (draft, deck and games), which
+      // survives Arena replacing its log at launch (2026-11-13: the button found no draft).
+      const latest = api.getLatestRun ? await api.getLatestRun() : null;
+      if (latest) {
+        await api.openReview(`https://23spells.pages.dev/${latest.set ? `?set=${latest.set}` : ''}#arena=${latest.course}`);
+        return;
+      }
       const data = await api.getReview();
       const set = data?.setCode ?? lastView?.setCode ?? null;
       if (!data || !set) {

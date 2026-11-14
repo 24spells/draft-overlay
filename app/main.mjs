@@ -904,6 +904,9 @@ ipcMain.handle('overlay:review', async () => {
   return picks.length ? { setCode, format, picks } : null;
 });
 
+// The newest recorded run, opened on 23spells (works after Arena replaced its log).
+ipcMain.handle('overlay:latest-run', async () => (arena ? arena.latest() : null));
+
 ipcMain.handle('overlay:open-review', (_event, url) => {
   if (typeof url !== 'string' || !url.startsWith('https://23spells.pages.dev/')) {
     return false;
