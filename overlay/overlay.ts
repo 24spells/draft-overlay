@@ -823,7 +823,7 @@ export function mountOverlay(root: HTMLElement, api: OverlayApi): void {
       const data = await api.getReview();
       const set = data?.setCode ?? lastView?.setCode ?? null;
       if (!data || !set) {
-        reviewButton.textContent = 'No draft in Arena's log yet';
+        reviewButton.textContent = "No draft in Arena's log yet";
         await new Promise((r) => setTimeout(r, 1800));
         return;
       }
