@@ -12,7 +12,7 @@
 // Never uploaded: player names, account ids. The parser does not keep them.
 
 import { createHash, randomBytes } from 'node:crypto';
-import { existsSync, mkdirSync, readdirSync, readFileSync, statSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, readdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { readFile } from 'node:fs/promises';
 import path from 'node:path';
 import { gzipSync } from 'node:zlib';
@@ -42,10 +42,17 @@ export function createArenaRecorder({ userDir, logPath, namesFor, onChange = () 
   let syncing = null;
   let lastError = null;
 
-  /** Keep a gzipped copy of a log, named by when Arena created it (stable across the rename to Player-prev.log). */
+  /**
+   * Keep a gzipped copy of a log, named by the session's first timestamp (stable across
+   * the rename to Player-prev.log). Not the file's creation date: Windows gives a file
+   * re-created under the same name its old creation date, so every session looked the same.
+   */
   function archive(file, text) {
-    const st = statSync(file);
-    const key = new Date(st.birthtimeMs || st.mtimeMs).toISOString().replace(/[:.]/g, '-');
+    if (text.length < 4096) return;
+    const first = /(\d{1,2})\/(\d{1,2})\/(\d{4}) (\d{1,2}):(\d{2}):(\d{2})(?: ([AP]M))?/.exec(text.slice(0, 65536));
+    const key = first
+      ? `${first[3]}-${first[1].padStart(2, '0')}-${first[2].padStart(2, '0')}_${String(first[7] ? (Number(first[4]) % 12) + (first[7] === 'PM' ? 12 : 0) : Number(first[4])).padStart(2, '0')}-${first[5]}-${first[6]}`
+      : `h${hashOf(text.slice(0, 4096))}`;
     if (state.archived[key] === text.length) return;
     mkdirSync(logDir, { recursive: true });
     writeFileSync(path.join(logDir, `Player-${key}.log.gz`), gzipSync(text));
