@@ -159,6 +159,24 @@ export function createArenaRecorder({ userDir, logPath, namesFor, onChange = () 
   async function sync() {
     if (!state.token) return;
     syncing ??= (async () => {
+      // A key that the site has not confirmed yet (connected from another device, e.g. the iPad): check first.
+      if (!state.name) {
+        try {
+          const r = await fetch(`${SITE}/api/arena/device`, { headers: { 'x-device-token': state.token } });
+          if (!r.ok) {
+            lastError = 'waiting for 23spells to connect';
+            onChange();
+            return;
+          }
+          state.name = (await r.json()).name;
+          saveState();
+          log(`arena: connected to 23spells as ${state.name}`);
+        } catch {
+          lastError = 'offline';
+          onChange();
+          return;
+        }
+      }
       const todo = pendingRecords();
       for (let i = 0; i < todo.length; i += BATCH) {
         const part = todo.slice(i, i + BATCH);
@@ -234,5 +252,10 @@ export function createArenaRecorder({ userDir, logPath, namesFor, onChange = () 
   }
 
   setInterval(() => void sync(), SYNC_EVERY_MS);
+  // Waiting to be connected: check often, so records go up soon after the link is opened.
+  setInterval(() => {
+    if (state.token && !state.name) void sync();
+  }, 30_000);
+  setTimeout(() => void sync(), 5000);
   return { scanAll, soon, sync, connect, disconnect, status };
 }
