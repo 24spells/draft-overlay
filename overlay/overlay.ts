@@ -506,7 +506,9 @@ export function mountOverlay(root: HTMLElement, api: OverlayApi): void {
       row.hidden = folded;
     }
     renderCoachRows(folded);
-    reviewButton.hidden = folded || !api.getReview || !api.openReview || !lastView;
+    // Always reachable when no pack is on screen (after the draft, at deckbuilding), even folded;
+    // during a pack it follows the fold. It reads Arena's log itself, so it works after a restart.
+    reviewButton.hidden = !api.getReview || !api.openReview || (!!view && folded);
     foldButton.textContent = folded ? '▲ Overlay' : '▼ Close';
     foldButton.title = folded ? 'Open the overlay controls' : 'Fold the overlay controls';
 
@@ -820,7 +822,11 @@ export function mountOverlay(root: HTMLElement, api: OverlayApi): void {
     try {
       const data = await api.getReview();
       const set = data?.setCode ?? lastView?.setCode ?? null;
-      if (!data || !set) return;
+      if (!data || !set) {
+        reviewButton.textContent = 'No draft in Arena's log yet';
+        await new Promise((r) => setTimeout(r, 1800));
+        return;
+      }
       if (!coach || coach.set !== set) await loadCoach(set);
       if (!coach) return;
       const byName = coach.byName;
