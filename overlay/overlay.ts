@@ -844,14 +844,15 @@ export function mountOverlay(root: HTMLElement, api: OverlayApi): void {
       const parts = data.picks.map((p) => {
         const taken = p.taken === null ? null : ix(p.taken);
         const shown = p.cards.map(ix).filter((x): x is number => x !== null);
-        return [taken === null ? 'x' : taken.toString(36), ...shown.map((x) => x.toString(36))].join('.');
+        // '~' marks an unknown card: never a base-36 digit (v1 used 'x', which is also card #33).
+        return [taken === null ? '~' : taken.toString(36), ...shown.map((x) => x.toString(36))].join('.');
       });
-      if (parts.filter((x) => !x.startsWith('x')).length < data.picks.length / 2) {
+      if (parts.filter((x) => !x.startsWith('~')).length < data.picks.length / 2) {
         reviewButton.textContent = "Couldn't read this draft's cards";
         await new Promise((r) => setTimeout(r, 2200));
         return;
       }
-      await api.openReview(`https://23spells.pages.dev/?set=${set}#review=1-${set}-${parts.join('_')}`);
+      await api.openReview(`https://23spells.pages.dev/?set=${set}#review=2-${set}-${parts.join('_')}`);
     } finally {
       reviewButton.textContent = 'Review in 23spells';
     }
