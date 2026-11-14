@@ -1,0 +1,55 @@
+/* The setup window: 23spells' look (dark surfaces, gold accent, rounded cards). */
+:root {
+  --bg: #0f1115; --surface: #191c22; --surface-3: #2a2e36; --line: #2c3038;
+  --text: #f1f2f4; --text-2: #b9bec8; --text-3: #8a909b; --accent: #e8b147; --ok: #62b884; --warn: #f2c46b;
+  color-scheme: dark;
+}
+* { box-sizing: border-box; }
+html, body { margin: 0; background: var(--bg); color: var(--text); font: 15px/1.45 'Segoe UI', system-ui, sans-serif; }
+main { max-width: 560px; margin: 0 auto; padding: 24px 22px 22px; }
+.kicker { margin: 0; color: var(--accent); font-size: 12px; font-weight: 800; letter-spacing: 0.1em; text-transform: uppercase; }
+.kicker span { color: var(--text-3); letter-spacing: 0.04em; }
+h1 { margin: 4px 0 6px; font-size: 26px; letter-spacing: -0.01em; }
+.lede { margin: 0 0 16px; color: var(--text-2); }
+
+.steps { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 10px; }
+.steps li { display: flex; gap: 14px; padding: 14px; border-radius: 16px; background: var(--surface); border: 1px solid var(--line); }
+.steps b { font-size: 16px; }
+.steps em { font-style: normal; font-weight: 600; color: var(--text-3); font-size: 13px; }
+.say { margin: 2px 0 0; color: var(--text-2); font-size: 14px; }
+.mark { flex: none; width: 30px; height: 30px; border-radius: 50%; border: 2px solid var(--line); display: grid; place-items: center; }
+li[data-state='ok'] { border-color: #2f5a3f; }
+li[data-state='ok'] .mark { background: var(--ok); border-color: var(--ok); }
+li[data-state='ok'] .mark::after { content: ''; width: 10px; height: 6px; border-left: 3px solid #0c0d10; border-bottom: 3px solid #0c0d10; transform: translateY(-2px) rotate(-45deg); }
+li[data-state='todo'] { border-color: #6b5426; }
+li[data-state='todo'] .mark { border-color: var(--warn); }
+li[data-state='todo'] .mark::after { content: '!'; color: var(--warn); font-weight: 900; }
+li[data-state='wait'] .mark { border-color: var(--text-3); border-top-color: var(--accent); animation: spin 1.1s linear infinite; }
+@keyframes spin { to { transform: rotate(360deg); } }
+@media (prefers-reduced-motion: reduce) { li[data-state='wait'] .mark { animation: none; } }
+.how { margin-top: 8px; padding: 10px 12px; border-radius: 12px; background: var(--surface-3); font-size: 14px; }
+.how p { margin: 0 0 6px; }
+.how p:last-child { margin: 0; }
+.fine { color: var(--text-3); font-size: 13px; }
+
+.data { margin-top: 18px; padding: 14px; border-radius: 16px; background: var(--surface); border: 1px solid var(--line); display: flex; flex-direction: column; gap: 12px; }
+.data h2 { margin: 0; font-size: 16px; }
+.sw { display: flex; gap: 12px; align-items: flex-start; cursor: pointer; }
+.sw input { position: absolute; opacity: 0; width: 1px; height: 1px; }
+.track { flex: none; width: 44px; height: 26px; margin-top: 2px; border-radius: 999px; background: var(--surface-3); position: relative; transition: background 150ms; }
+.track i { position: absolute; top: 3px; left: 3px; width: 20px; height: 20px; border-radius: 50%; background: var(--text-2); transition: transform 150ms; }
+.sw input:checked + .track { background: var(--ok); }
+.sw input:checked + .track i { transform: translateX(18px); background: #fff; }
+.sw input:focus-visible + .track { outline: 2px solid var(--accent); outline-offset: 2px; }
+.txt { display: flex; flex-direction: column; gap: 2px; }
+.txt b { font-size: 15px; }
+.txt > span { font-size: 13px; color: var(--text-3); }
+
+.btn { margin-top: 8px; min-height: 40px; padding: 0 16px; border-radius: 12px; border: 1px solid var(--line); background: var(--surface-3); color: var(--text); font: inherit; font-weight: 700; cursor: pointer; }
+.btn.primary { border: 0; background: var(--accent); color: #0c0d10; font-weight: 900; min-width: 120px; }
+.btn:active { transform: scale(0.98); }
+.link { padding: 0; border: 0; background: none; color: var(--accent); font: inherit; font-weight: 700; text-decoration: underline; cursor: pointer; }
+
+footer { margin-top: 18px; display: flex; align-items: center; justify-content: space-between; gap: 14px; }
+.ready { margin: 0; font-size: 14px; color: var(--text-2); }
+.ready[data-ready='1'] { color: var(--ok); font-weight: 700; }

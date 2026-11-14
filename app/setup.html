@@ -1,0 +1,72 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; style-src 'self'; script-src 'self'; img-src 'self' data:" />
+  <title>Draft Overlay setup</title>
+  <link rel="stylesheet" href="setup.css" />
+</head>
+<body>
+  <main>
+    <header>
+      <p class="kicker">Draft Overlay <span id="version"></span></p>
+      <h1>Let's get you set up</h1>
+      <p class="lede">Three checks, then you're ready to draft. Each one turns green on its own.</p>
+    </header>
+
+    <ol class="steps">
+      <li id="s-arena">
+        <span class="mark"></span>
+        <div>
+          <b>MTG Arena</b>
+          <p class="say"></p>
+        </div>
+      </li>
+      <li id="s-logs">
+        <span class="mark"></span>
+        <div>
+          <b>Detailed Logs</b>
+          <p class="say"></p>
+          <div class="how" hidden>
+            <p>In Arena: <strong>Options</strong> (the gear) → <strong>View Account</strong> → tick <strong>Detailed Logs (Plugin Support)</strong>, then restart Arena.</p>
+            <p class="fine">That setting lets companion apps read Arena's log file. The overlay only ever reads it. <button class="link" data-open="arenaLogs">Arena's own instructions</button></p>
+          </div>
+        </div>
+      </li>
+      <li id="s-connect">
+        <span class="mark"></span>
+        <div>
+          <b>Your 23spells save <em>(recommended)</em></b>
+          <p class="say"></p>
+          <button class="btn" id="connect" hidden>Connect to 23spells</button>
+        </div>
+      </li>
+    </ol>
+
+    <section class="data">
+      <h2>Your data</h2>
+      <label class="sw">
+        <input type="checkbox" id="share" />
+        <span class="track"><i></i></span>
+        <span class="txt"><b>Pool my games anonymously</b><span>Helps build better card stats. No name, save or device attached. Opponents' names and account IDs never leave this PC either way. <button class="link" data-open="privacy">Privacy</button></span></span>
+      </label>
+      <label class="sw">
+        <input type="checkbox" id="open17Lands" />
+        <span class="track"><i></i></span>
+        <span class="txt"><b>Also share with 17Lands</b><span id="seventeen">Opens 17Lands' own app with Arena, if you use it. Optional.</span></span>
+      </label>
+      <label class="sw">
+        <input type="checkbox" id="startWithWindows" />
+        <span class="track"><i></i></span>
+        <span class="txt"><b>Start with Windows</b><span>The overlay waits quietly in the tray and appears when you draft.</span></span>
+      </label>
+    </section>
+
+    <footer>
+      <p id="ready" class="ready"></p>
+      <button class="btn primary" id="done">Finish</button>
+    </footer>
+  </main>
+  <script src="setup.js"></script>
+</body>
+</html>

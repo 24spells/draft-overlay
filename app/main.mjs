@@ -1,6 +1,15 @@
-// The real app. Sits idle in the tray until Arena opens, then starts the
-// 17Lands client, follows Arena's log, and draws stats on draft packs.
-// Reads the log and window positions only. Never touches Arena's memory.
+// The real app. Sits idle in the tray until Arena opens, then follows Arena's
+// log and draws stats on draft packs (and opens the 17Lands client, if that
+// switch is on). Reads the log and window positions only. Never touches Arena's memory.
+//
+// Public release work (2026-11-14, plan: MTG AI references/overlay-public-plan.md):
+//   - Card stats come from 23spells (overlay-data/), built there from 17Lands' public
+//     datasets. Building locally from 17Lands' raw files (incl. the early website data)
+//     is a personal setting, localBuild, off for everyone else.
+//   - First-run setup window (app/setup.html): Arena found, Detailed Logs on, connect to
+//     23spells, share switches, start with Windows.
+//   - Updates itself from GitHub Releases (electron-updater) once a release feed is
+//     configured (scripts/release.mjs); 23spells' overlay/latest.json sets a minimum version.
 
 import {
   app,
@@ -9,6 +18,7 @@ import {
   ipcMain,
   Menu,
   nativeImage,
+  Notification,
   protocol,
   screen,
   shell,
@@ -33,11 +43,13 @@ import { LogWatcher } from './build/core/log-watcher.js';
 import { createArenaRecorder } from './arena-sync.mjs';
 import { readArenaLog } from './build/core/arena-records.js';
 import { gunzipSync } from 'node:zlib';
+import { createRequire } from 'node:module';
 
 const ROOT = app.getAppPath();
 const APP_DIR = path.join(ROOT, 'app');
 // Installed copies keep data in the user's app folder, since the install folder is replaced on update.
-const USER_DIR = app.isPackaged ? app.getPath('userData') : ROOT;
+// A test run (OVERLAY_USER_DATA) keeps everything in its own folder.
+const USER_DIR = process.env.OVERLAY_USER_DATA ?? (app.isPackaged ? app.getPath('userData') : ROOT);
 const DATA_DIR = path.join(USER_DIR, 'card-data');
 const SAVED_DRAFTS = path.join(USER_DIR, 'saved-drafts');
 const LOG_PATH =
@@ -95,6 +107,8 @@ let lastPackAt = 0;
 const DRAFT_QUIET_MS = 5 * 60 * 1000;
 const drafting = () => Date.now() - lastPackAt < DRAFT_QUIET_MS;
 
+if (process.env.OVERLAY_USER_DATA) app.setPath('userData', process.env.OVERLAY_USER_DATA);
+
 if (!app.requestSingleInstanceLock()) {
   app.quit();
 }
@@ -102,21 +116,59 @@ if (!app.requestSingleInstanceLock()) {
 // ---------- Settings ----------
 const settingsPath = () => path.join(app.getPath('userData'), 'app-settings.json');
 
+const SETTINGS_DEFAULTS = {
+  startWithWindows: true,
+  /** The first-run setup window has been finished (or skipped). */
+  setupDone: false,
+  /** Pool this player's games anonymously for card stats (sent as x-share; on by default, one switch off). */
+  share: true,
+  /** Open the 17Lands client when Arena opens (optional; off by default). */
+  open17Lands: false,
+  /** Personal: build stats locally from 17Lands' raw files, incl. early website data. Never for others. */
+  localBuild: false,
+};
+
 function readSettings() {
   try {
-    return { startWithWindows: true, ...JSON.parse(readFileSync(settingsPath(), 'utf8')) };
+    return { ...SETTINGS_DEFAULTS, ...JSON.parse(readFileSync(settingsPath(), 'utf8')) };
   } catch {
-    return { startWithWindows: true };
+    return { ...SETTINGS_DEFAULTS };
   }
 }
 
+function writeSettings(patch) {
+  const next = { ...readSettings(), ...patch };
+  try {
+    mkdirSync(path.dirname(settingsPath()), { recursive: true });
+    writeFileSync(settingsPath(), JSON.stringify(next));
+  } catch {
+    // Settings are a convenience; never crash over them.
+  }
+  return next;
+}
+
 function applyStartWithWindows(enabled) {
+  // Only the installed app registers with Windows: a development or test run (separate profile) never does.
+  if (!app.isPackaged || process.env.OVERLAY_USER_DATA) {
+    writeSettings({ startWithWindows: enabled });
+    return;
+  }
+  // Our own entry name: Electron's default ("electron.app.Electron") is shared by every Electron app.
+  const OLD_NAME = 'electron.app.Electron';
+  try {
+    if (app.getLoginItemSettings({ path: process.execPath, args: [], name: OLD_NAME }).openAtLogin) {
+      app.setLoginItemSettings({ openAtLogin: false, path: process.execPath, args: [], name: OLD_NAME });
+    }
+  } catch {
+    // Older entry left as is.
+  }
   app.setLoginItemSettings({
     openAtLogin: enabled,
     path: process.execPath,
-    args: app.isPackaged ? [] : [ROOT],
+    args: [],
+    name: 'Draft Overlay',
   });
-  writeFileSync(settingsPath(), JSON.stringify({ startWithWindows: enabled }));
+  writeSettings({ startWithWindows: enabled });
 }
 
 // ---------- Tray ----------
@@ -139,7 +191,8 @@ function refreshTray() {
   tray.setToolTip(`Draft Overlay: ${statusText}`);
   tray.setContextMenu(
     Menu.buildFromTemplate([
-      { label: `Draft Overlay: ${statusText}`, enabled: false },
+      { label: `Draft Overlay ${app.getVersion()}: ${statusText}`, enabled: false },
+      ...updateMenu(),
       { type: 'separator' },
       {
         label: 'Pause overlay',
@@ -156,6 +209,7 @@ function refreshTray() {
         checked: readSettings().startWithWindows,
         click: (item) => applyStartWithWindows(item.checked),
       },
+      { label: 'Setup and settings...', click: () => openSetup() },
       { type: 'separator' },
       ...arenaMenu(),
       { type: 'separator' },
@@ -579,6 +633,9 @@ function builtAt(setCode) {
  * Waits if a draft is open, so grades never change between picks.
  */
 async function refreshInBackground(reason) {
+  if (!readSettings().localBuild) {
+    return refreshHosted(reason);
+  }
   if (refreshing) {
     return;
   }
@@ -637,7 +694,7 @@ async function ensureData(setCode) {
   }
   dataChecked.add(setCode);
   setStatus(`Updating ${setCode} stats`);
-  const ok = await runBuild(setCode);
+  const ok = readSettings().localBuild ? await runBuild(setCode) : await downloadHostedSet(setCode);
   statsCache.clear();
   setStatus(ok ? 'Running' : `No public data yet for ${setCode}`);
   sendView();
@@ -749,7 +806,7 @@ function isRunning(image) {
 }
 
 async function startClientIfNeeded() {
-  if (!existsSync(CLIENT_SHORTCUT) || (await isRunning(CLIENT_IMAGE))) {
+  if (!readSettings().open17Lands || !existsSync(CLIENT_SHORTCUT) || (await isRunning(CLIENT_IMAGE))) {
     return;
   }
   spawn('cmd.exe', ['/c', 'start', '', CLIENT_SHORTCUT], {
@@ -827,6 +884,276 @@ function runSmokeTest(shotPath) {
   }, 5000);
 }
 
+// ---------- Card stats from 23spells ----------
+// The site hosts each set's stats file (built from 17Lands' public datasets, CC BY 4.0, credited on
+// screen) plus index.json. Installed copies download the newest sets in the background and any other
+// set the first time it is drafted: small files, seconds, nothing crunched on the player's PC.
+// OVERLAY_SITE: point a test run at a local copy of the site (e.g. http://localhost:5173).
+const SITE = process.env.OVERLAY_SITE ?? 'https://23spells.pages.dev';
+const HOSTED = `${SITE}/overlay-data`;
+const HOSTED_NEWEST = 4;
+let hostedIndex = null;
+
+async function fetchHostedIndex() {
+  try {
+    const r = await fetch(`${HOSTED}/index.json?t=${Date.now()}`, { signal: AbortSignal.timeout(15000) });
+    if (!r.ok || !(r.headers.get('content-type') ?? '').includes('json')) return null;
+    hostedIndex = await r.json();
+    return hostedIndex;
+  } catch {
+    return null;
+  }
+}
+
+function localFileDate(setCode, format) {
+  try {
+    return loadStats(setCode, format)?.source?.fileDate ?? null;
+  } catch {
+    return null;
+  }
+}
+
+/** Download one set's files (every format the site has) when newer than ours. True if usable after. */
+async function downloadHostedSet(setCode, index = hostedIndex) {
+  const idx = index ?? (await fetchHostedIndex());
+  const formats = idx?.sets?.[setCode];
+  if (!formats) {
+    logData(`hosted ${setCode}: not on 23spells yet`);
+    return builtAt(setCode) !== null;
+  }
+  mkdirSync(DATA_DIR, { recursive: true });
+  let got = 0;
+  for (const [format, meta] of Object.entries(formats)) {
+    const have = localFileDate(setCode, format);
+    if (have && meta.fileDate && have >= meta.fileDate) continue;
+    try {
+      const r = await fetch(`${HOSTED}/${setCode}.${format}.json`, { signal: AbortSignal.timeout(60000) });
+      if (!r.ok) continue;
+      const text = await r.text();
+      JSON.parse(text);
+      const file = path.join(DATA_DIR, `${setCode}.${format}.json`);
+      writeFileSync(file, text);
+      statsCache.delete(file);
+      got += 1;
+    } catch (error) {
+      logData(`hosted ${setCode} ${format}: ${error.message}`);
+    }
+  }
+  if (got) logData(`hosted ${setCode}: ${got} file(s) updated`);
+  return builtAt(setCode) !== null;
+}
+
+async function refreshHosted(reason) {
+  if (refreshing) return;
+  if (drafting()) {
+    if (!refreshPending) {
+      refreshPending = true;
+      setTimeout(() => {
+        refreshPending = false;
+        void refreshInBackground(`${reason}, after draft`);
+      }, DRAFT_QUIET_MS);
+    }
+    return;
+  }
+  refreshing = true;
+  try {
+    const idx = await fetchHostedIndex();
+    if (!idx) {
+      logData(`hosted check (${reason}): 23spells unreachable`);
+      return;
+    }
+    const newest = (idx.order ?? Object.keys(idx.sets)).slice(0, HOSTED_NEWEST);
+    const sets = [...new Set([...localSets(), ...newest])].filter((c) => idx.sets[c]);
+    logData(`hosted check (${reason}): ${sets.join(', ')}`);
+    for (const setCode of sets) await downloadHostedSet(setCode, idx);
+  } finally {
+    refreshing = false;
+    setStatus(arenaRunning ? 'Running' : 'Waiting for Arena');
+  }
+}
+
+// ---------- First-run setup (and Setup and settings...) ----------
+let setupWindow = null;
+
+/** Detailed Logs: true when Arena says so (or detailed lines show up), false when it says off, null if unknown. */
+function detailedLogs() {
+  let text = '';
+  try {
+    text = readFileSync(LOG_PATH, 'utf8');
+  } catch {
+    return null;
+  }
+  if (text.includes('DETAILED LOGS: DISABLED')) return false;
+  if (text.includes('DETAILED LOGS: ENABLED') || text.includes('[UnityCrossThreadLogger]==>')) return true;
+  return null;
+}
+
+function setupState() {
+  const settings = readSettings();
+  const s = arena?.status() ?? {};
+  return {
+    version: app.getVersion(),
+    arenaInstalled: existsSync(path.dirname(LOG_PATH)),
+    arenaLog: existsSync(LOG_PATH),
+    arenaRunning,
+    detailedLogs: detailedLogs(),
+    connected: s.connected ?? null,
+    connecting: Boolean(s.pairing),
+    client17: existsSync(CLIENT_SHORTCUT),
+    share: settings.share,
+    open17Lands: settings.open17Lands,
+    startWithWindows: settings.startWithWindows,
+    setupDone: settings.setupDone,
+  };
+}
+
+function openSetup() {
+  if (setupWindow && !setupWindow.isDestroyed()) {
+    setupWindow.show();
+    setupWindow.focus();
+    return setupWindow;
+  }
+  setupWindow = new BrowserWindow({
+    width: 620,
+    height: 780,
+    title: 'Draft Overlay setup',
+    backgroundColor: '#0f1115',
+    autoHideMenuBar: true,
+    show: false,
+    webPreferences: {
+      preload: path.join(APP_DIR, 'setup-preload.cjs'),
+      contextIsolation: true,
+      nodeIntegration: false,
+      sandbox: true,
+    },
+  });
+  setupWindow.webContents.setWindowOpenHandler(() => ({ action: 'deny' }));
+  setupWindow.webContents.on('will-navigate', (event) => event.preventDefault());
+  setupWindow.once('ready-to-show', () => setupWindow?.show());
+  setupWindow.on('closed', () => {
+    setupWindow = null;
+  });
+  void setupWindow.loadURL('overlay://app/setup.html');
+  return setupWindow;
+}
+
+const fromSetup = (event) => setupWindow && !setupWindow.isDestroyed() && event.sender === setupWindow.webContents;
+ipcMain.handle('setup:state', (event) => (fromSetup(event) ? setupState() : null));
+ipcMain.handle('setup:set', (event, key, value) => {
+  if (!fromSetup(event) || !['share', 'open17Lands', 'startWithWindows'].includes(key)) return null;
+  if (key === 'startWithWindows') applyStartWithWindows(Boolean(value));
+  else writeSettings({ [key]: Boolean(value) });
+  if (key === 'open17Lands' && value && arenaRunning) void startClientIfNeeded();
+  refreshTray();
+  return setupState();
+});
+ipcMain.handle('setup:connect', (event) => {
+  if (!fromSetup(event) || !arena) return null;
+  arena.connect((url) => shell.openExternal(url));
+  return setupState();
+});
+ipcMain.handle('setup:done', (event) => {
+  if (!fromSetup(event)) return null;
+  writeSettings({ setupDone: true });
+  setupWindow?.close();
+  return true;
+});
+ipcMain.handle('setup:open', (event, which) => {
+  if (!fromSetup(event)) return false;
+  const links = {
+    arenaLogs: 'https://mtgarena-support.wizards.com/hc/en-us/articles/360000726823-Creating-Log-Files-on-PC-Mac-Steam',
+    seventeen: 'https://www.17lands.com',
+    privacy: `${SITE}/#privacy`,
+    site: SITE,
+  };
+  if (!links[which]) return false;
+  void shell.openExternal(links[which]);
+  return true;
+});
+
+// ---------- Updates ----------
+// App updates: electron-updater reads the release feed baked in at build time (app-update.yml, from
+// scripts/release.mjs). A build without one (npm run dist) simply never checks. Downloads in the
+// background; installs when the app quits, or now from the tray.
+let updateReady = null;
+let needsUpdate = null;
+const UPDATE_EVERY_MS = 6 * 60 * 60 * 1000;
+
+function updateMenu() {
+  const items = [];
+  if (updateReady) items.push({ label: `Restart to update to ${updateReady}`, click: () => installUpdate() });
+  if (needsUpdate) items.push({ label: `Update needed: get version ${needsUpdate}`, click: () => void shell.openExternal(`${SITE}/#overlay`) });
+  return items;
+}
+
+let updater = null;
+function installUpdate() {
+  try {
+    updater?.quitAndInstall(true, true);
+  } catch (error) {
+    logData(`update: install failed: ${error.message}`);
+  }
+}
+
+function startUpdater() {
+  if (!app.isPackaged || !existsSync(path.join(process.resourcesPath, 'app-update.yml'))) {
+    logData('update: no release feed in this build; not checking');
+    return;
+  }
+  try {
+    const require = createRequire(import.meta.url);
+    ({ autoUpdater: updater } = require('electron-updater'));
+  } catch (error) {
+    logData(`update: unavailable (${error.message})`);
+    return;
+  }
+  updater.autoDownload = true;
+  updater.autoInstallOnAppQuit = true;
+  updater.on('error', (error) => logData(`update: ${error?.message ?? error}`));
+  updater.on('update-available', (info) => logData(`update: ${info.version} available, downloading`));
+  updater.on('update-downloaded', (info) => {
+    updateReady = info.version;
+    logData(`update: ${info.version} ready`);
+    refreshTray();
+    if (Notification.isSupported()) {
+      const note = new Notification({ title: 'Draft Overlay update ready', body: `Version ${info.version} installs when the overlay restarts. Click to restart now.` });
+      note.on('click', () => installUpdate());
+      note.show();
+    }
+  });
+  const check = () => {
+    if (drafting()) return; // never mid-draft
+    updater.checkForUpdates().catch((error) => logData(`update: check failed: ${error?.message ?? error}`));
+  };
+  setTimeout(check, 60 * 1000);
+  setInterval(check, UPDATE_EVERY_MS);
+}
+
+/** "1.10.0" > "1.9.2". */
+function newer(a, b) {
+  const pa = String(a).split('.').map(Number);
+  const pb = String(b).split('.').map(Number);
+  for (let i = 0; i < 3; i += 1) if ((pa[i] ?? 0) !== (pb[i] ?? 0)) return (pa[i] ?? 0) > (pb[i] ?? 0);
+  return false;
+}
+
+/** 23spells says which versions still work with the site; an older one asks to update. */
+async function checkMinimumVersion() {
+  try {
+    const r = await fetch(`${SITE}/overlay/latest.json?t=${Date.now()}`, { signal: AbortSignal.timeout(15000) });
+    if (!r.ok) return;
+    const latest = await r.json();
+    needsUpdate = latest?.min && newer(latest.min, app.getVersion()) ? latest.version ?? latest.min : null;
+    if (needsUpdate) {
+      logData(`update: this version is below the minimum (${latest.min}); asking to update`);
+      setStatus('Update needed');
+    }
+    refreshTray();
+  } catch {
+    // Offline: check again later.
+  }
+}
+
 // ---------- Start ----------
 app.on('window-all-closed', () => {});
 
@@ -860,7 +1187,32 @@ app.whenReady().then(() => {
 
   applyStartWithWindows(readSettings().startWithWindows);
   tray = new Tray(trayIcon());
-  arena = createArenaRecorder({ userDir: USER_DIR, logPath: LOG_PATH, namesFor, onChange: refreshTray, log: logData });
+  arena = createArenaRecorder({
+    userDir: USER_DIR,
+    logPath: LOG_PATH,
+    namesFor,
+    onChange: () => {
+      refreshTray();
+      if (setupWindow && !setupWindow.isDestroyed()) setupWindow.webContents.send('setup:changed');
+    },
+    log: logData,
+    share: () => readSettings().share,
+  });
+  if (!readSettings().setupDone || process.env.OVERLAY_SETUP_SHOT) {
+    const win = openSetup();
+    const shot = process.env.OVERLAY_SETUP_SHOT;
+    if (shot) {
+      win.webContents.once('did-finish-load', () =>
+        setTimeout(async () => {
+          writeFileSync(shot, (await win.webContents.capturePage()).toPNG());
+          app.quit();
+        }, 1500),
+      );
+    }
+  }
+  startUpdater();
+  void checkMinimumVersion();
+  setInterval(() => void checkMinimumVersion(), 24 * 60 * 60 * 1000);
   setTimeout(() => void arena.scanAll(), 15_000);
   refreshTray();
   overlay = createOverlay();

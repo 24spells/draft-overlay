@@ -26,7 +26,7 @@ const EVENT_SET = /^[A-Za-z]+_([A-Za-z0-9]+)_\d{8}$/;
 
 const hashOf = (text) => createHash('sha256').update(text).digest('hex').slice(0, 16);
 
-export function createArenaRecorder({ userDir, logPath, namesFor, onChange = () => {}, log = () => {} }) {
+export function createArenaRecorder({ userDir, logPath, namesFor, onChange = () => {}, log = () => {}, share = () => true }) {
   const recDir = path.join(userDir, 'arena-records');
   const logDir = path.join(userDir, 'arena-logs');
   const statePath = path.join(userDir, 'arena-sync.json');
@@ -185,7 +185,8 @@ export function createArenaRecorder({ userDir, logPath, namesFor, onChange = () 
         try {
           r = await fetch(`${SITE}/api/arena/records`, {
             method: 'PUT',
-            headers: { 'content-type': 'application/json', 'x-device-token': state.token },
+            // x-share: the setup's "pool my games anonymously" switch (2026-11-14), stored per record by the site.
+            headers: { 'content-type': 'application/json', 'x-device-token': state.token, 'x-share': share() ? '1' : '0' },
             body: JSON.stringify({ records }),
           });
         } catch {
@@ -262,7 +263,7 @@ export function createArenaRecorder({ userDir, logPath, namesFor, onChange = () 
   function status() {
     const total = existsSync(recDir) ? readdirSync(recDir).filter((n) => n.endsWith('.json')).length : 0;
     const waiting = state.token ? pendingRecords().length : total;
-    return { connected: state.name, total, waiting, error: lastError };
+    return { connected: state.name, pairing: Boolean(state.token && !state.name), total, waiting, error: lastError };
   }
 
   setInterval(() => void sync(), SYNC_EVERY_MS);
