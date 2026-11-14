@@ -256,7 +256,7 @@ export function createArenaRecorder({ userDir, logPath, namesFor, onChange = () 
       const rec = JSON.parse(readFileSync(path.join(recDir, name), 'utf8'));
       if ((rec.at ?? 0) > (best?.at ?? -1)) best = rec;
     }
-    return best ? { set: best.summary?.set ?? null, course: best.course ?? best.id } : null;
+    return best ? { set: best.summary?.set ?? null, course: best.course ?? best.id, at: best.at ?? null } : null;
   }
 
   function status() {

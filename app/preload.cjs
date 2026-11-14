@@ -17,4 +17,5 @@ contextBridge.exposeInMainWorld('draftOverlay', {
   getReview: () => ipcRenderer.invoke('overlay:review'),
   openReview: (url) => ipcRenderer.invoke('overlay:open-review', url),
   getLatestRun: () => ipcRenderer.invoke('overlay:latest-run'),
+  getSealedPool: () => ipcRenderer.invoke('overlay:sealed-pool'),
 });

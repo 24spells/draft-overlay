@@ -823,6 +823,12 @@ export function mountOverlay(root: HTMLElement, api: OverlayApi): void {
       // Connected to 23spells: open the newest recorded run (draft, deck and games), which
       // survives Arena replacing its log at launch (2026-11-13: the button found no draft).
       const latest = api.getLatestRun ? await api.getLatestRun() : null;
+      // Sealed (2026-11-14): when your newest event is a sealed one, open its pool on 23spells to build.
+      const sealedPool = api.getSealedPool ? await api.getSealedPool() : null;
+      if (sealedPool && (!latest || (sealedPool.at ?? 0) >= (latest.at ?? 0))) {
+        await api.openReview(sealedPool.url);
+        return;
+      }
       if (latest) {
         await api.openReview(`https://23spells.pages.dev/${latest.set ? `?set=${latest.set}` : ''}#arena=${latest.course}`);
         return;

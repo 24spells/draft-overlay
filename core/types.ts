@@ -78,7 +78,9 @@ export type OverlayApi = {
   /** Opens a 23spells link in the browser (only that site). */
   openReview?: (url: string) => Promise<boolean>;
   /** The newest recorded Arena run, when the overlay is connected to 23spells (its records survive Arena's log resets). */
-  getLatestRun?: () => Promise<{ set: string | null; course: string } | null>;
+  getLatestRun?: () => Promise<{ set: string | null; course: string; at?: number | null } | null>;
+  /** The newest sealed pool in Arena's logs, as a 23spells link (2026-11-14). */
+  getSealedPool?: () => Promise<{ set: string; event: string; at: number | null; cards: number; unknown: number; url: string } | null>;
 };
 
 export type ReviewData = {

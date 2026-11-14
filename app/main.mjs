@@ -31,6 +31,8 @@ import readline from 'node:readline';
 import { DraftTracker, parseLogLine } from './build/core/log-parser.js';
 import { LogWatcher } from './build/core/log-watcher.js';
 import { createArenaRecorder } from './arena-sync.mjs';
+import { readArenaLog } from './build/core/arena-records.js';
+import { gunzipSync } from 'node:zlib';
 
 const ROOT = app.getAppPath();
 const APP_DIR = path.join(ROOT, 'app');
@@ -170,11 +172,13 @@ function arenaMenu() {
     return [
       { label: `23spells: not connected (${games})`, enabled: false },
       { label: 'Connect to 23spells...', click: () => arena.connect((url) => shell.openExternal(url)) },
+      { label: 'Build my sealed pool in 23spells', click: () => void openSealedPool() },
     ];
   }
   return [
     { label: `23spells: ${s.connected}${s.waiting ? `, ${s.waiting} to send` : ', all sent'}${s.error ? ` (${s.error})` : ''}`, enabled: false },
     { label: 'Open my Arena games', click: () => void shell.openExternal('https://23spells.pages.dev/#arena') },
+    { label: 'Build my sealed pool in 23spells', click: () => void openSealedPool() },
     { label: 'Send now', click: () => void arena.scanAll() },
     { label: 'Disconnect from 23spells', click: () => arena.disconnect() },
   ];
@@ -865,6 +869,55 @@ app.whenReady().then(() => {
   setTimeout(() => void refreshInBackground('app started'), REFRESH_FIRST_MS);
   setInterval(() => void refreshInBackground('every 6 hours'), REFRESH_EVERY_MS);
 });
+
+// ---------- Sealed: build your pool in 23spells (2026-11-14) ----------
+// Arena lists every event you are in with its card pool; for a sealed event that is the pool you
+// opened. The newest one, from the live log, the previous log or an archived copy, goes to 23spells
+// as a card list in the link (#pool=...), which opens the site's import with the set's sealed numbers.
+async function latestSealedPool() {
+  const files = [LOG_PATH, path.join(path.dirname(LOG_PATH), 'Player-prev.log')];
+  const archive = path.join(USER_DIR, 'arena-logs');
+  try {
+    for (const name of readdirSync(archive)) if (/\.log(\.gz)?$/.test(name)) files.push(path.join(archive, name));
+  } catch {
+    // No archive yet.
+  }
+  let best = null;
+  for (const file of files) {
+    let text;
+    try {
+      const buf = readFileSync(file);
+      text = file.endsWith('.gz') ? gunzipSync(buf).toString('utf8') : buf.toString('utf8');
+    } catch {
+      continue;
+    }
+    if (!text.includes('Sealed_')) continue;
+    for (const p of readArenaLog(text).sealed) if (!best || (p.at ?? 0) > (best.at ?? 0)) best = p;
+  }
+  if (!best) return null;
+  const names = namesFor(best.set, [...new Set(best.pool)]);
+  const counts = new Map();
+  let unknown = 0;
+  for (const id of best.pool) {
+    const n = names[id];
+    if (!n) { unknown += 1; continue; }
+    counts.set(n, (counts.get(n) ?? 0) + 1);
+  }
+  const list = [...counts].map(([n, c]) => `${c} ${n}`).join('\n');
+  return { set: best.set, event: best.event, at: best.at, wins: best.wins, losses: best.losses, cards: best.pool.length, unknown, list,
+    url: `https://23spells.pages.dev/?set=${best.set}#pool=${encodeURIComponent(list)}` };
+}
+ipcMain.handle('overlay:sealed-pool', async () => latestSealedPool());
+async function openSealedPool() {
+  const p = await latestSealedPool();
+  if (!p) {
+    logData('sealed: no sealed pool in Arena\'s logs yet');
+    return false;
+  }
+  logData(`sealed: opening ${p.set} pool (${p.cards} cards${p.unknown ? `, ${p.unknown} unnamed` : ''}) in 23spells`);
+  void shell.openExternal(p.url);
+  return true;
+}
 
 // ---------- Review in 23spells (2026-11-13) ----------
 // The current draft, read straight from Arena's log (complete even if the overlay

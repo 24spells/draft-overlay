@@ -69,8 +69,27 @@ export type ArenaGameRecord = {
   stuck: number[];
 };
 
+/**
+ * A sealed (or traditional sealed) pool (2026-11-14: "a single push button to export the pool into
+ * the web client"). Arena lists each event you are in with its CardPool; for sealed, that is the
+ * opened pool. Read straight from the log on demand, not sent to 23spells.
+ */
+export type ArenaSealedPool = {
+  kind: 'sealed';
+  id: string;
+  course: string;
+  event: string;
+  set: string;
+  format: string;
+  at: number | null;
+  pool: number[];
+  wins: number | null;
+  losses: number | null;
+};
+
 export type ArenaRecords = {
   drafts: ArenaDraftRecord[];
+  sealed: ArenaSealedPool[];
   games: ArenaGameRecord[];
   /** Basic lands named from the game itself (17Lands' card list can miss them). */
   basics: Record<string, string>;
@@ -82,6 +101,7 @@ type Zone = { type: string; owner: number | null; ids: number[] };
 const DRAFT_EVENT = /\b((?:PremierDraft|QuickDraft|TraditionalDraft|CubeDraft|Sealed|TraditionalSealed)_([A-Za-z0-9]+)_\d{8})\b/;
 // Arena's header times: "...PM: Match to ..." lines are local time, bare ones are UTC.
 const HEADER_TIME = /^\[UnityCrossThreadLogger\](\d{1,2}\/\d{1,2}\/\d{4} \d{1,2}:\d{2}:\d{2}(?: [AP]M)?)(:?)/;
+const SEALED_EVENT = /\b(Sealed|TraditionalSealed|TradSealed)_([A-Za-z0-9]+)_\d{8}\b/;
 const COURSE = /"CourseId":"([0-9a-f-]{36})","InternalEventName":"([^"]+)"/g;
 const BASIC_TYPES: Record<string, string> = { SubType_Plains: 'Plains', SubType_Island: 'Island', SubType_Swamp: 'Swamp', SubType_Mountain: 'Mountain', SubType_Forest: 'Forest' };
 
@@ -99,6 +119,7 @@ const num = (v: unknown): number | null => (typeof v === 'number' && Number.isFi
 
 export function readArenaLog(text: string): ArenaRecords {
   const drafts = new Map<string, ArenaDraftRecord>();
+  const sealed = new Map<string, ArenaSealedPool>();
   const games = new Map<string, ArenaGameRecord>();
   const basics: Record<string, string> = {};
   /** Latest course per event name, and each course's Arena record. */
@@ -164,6 +185,28 @@ export function readArenaLog(text: string): ArenaRecords {
         if (w || l) // Arena leaves out a zero count.
         courseRecord.set(m[1], { wins: w ? Number(w[1]) : 0, losses: l ? Number(l[1]) : 0 });
       }
+    }
+
+    // Sealed pools: any course object of a sealed event with its card pool.
+    if (line.includes('"CardPool":[') && /Sealed_/.test(line)) {
+      const walk = (v: unknown): void => {
+        if (Array.isArray(v)) { v.forEach(walk); return; }
+        if (!v || typeof v !== 'object') return;
+        const o = v as Record<string, unknown>;
+        const ev = typeof o.InternalEventName === 'string' ? SEALED_EVENT.exec(o.InternalEventName) : null;
+        if (ev && typeof o.CourseId === 'string' && Array.isArray(o.CardPool)) {
+          const pool = (o.CardPool as unknown[]).map(num).filter((x): x is number => x !== null && x > 0);
+          if (pool.length >= 40) {
+            const prev = sealed.get(o.CourseId);
+            sealed.set(o.CourseId, {
+              kind: 'sealed', id: o.CourseId, course: o.CourseId, event: ev[0], set: ev[2].toUpperCase(), format: ev[1],
+              at: prev?.at ?? now, pool, wins: num(o.CurrentWins) ?? 0, losses: num(o.CurrentLosses) ?? 0,
+            });
+          }
+        }
+        for (const x of Object.values(o)) if (x && typeof x === 'object') walk(x);
+      };
+      walk(jsonFrom(line));
     }
 
     // ---------- Drafts ----------
@@ -325,5 +368,5 @@ export function readArenaLog(text: string): ArenaRecords {
       d.losses = r.losses;
     }
   }
-  return { drafts: [...drafts.values()], games: [...games.values()], basics };
+  return { drafts: [...drafts.values()], sealed: [...sealed.values()], games: [...games.values()], basics };
 }
