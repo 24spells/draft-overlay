@@ -101,11 +101,14 @@ const early = publicCheck.status === 403 || publicCheck.status === 404;
 if (early) await buildEarly();
 
 async function buildEarly() {
-  const url = `https://www.17lands.com/card_ratings/data?expansion=${encodeURIComponent(set)}&format=${encodeURIComponent(format)}`;
+  // The website's current endpoint (2026-11-13). The old card_ratings/data one returns a frozen
+  // snapshot that ignores every filter. Personal use only: 17Lands marks this data for 17lands.com use.
+  const url = `https://www.17lands.com/api/card_data?expansion=${encodeURIComponent(set)}&event_type=${encodeURIComponent(format)}&time_period=ALL_TIME`;
   console.log(`No public files yet; reading early data from ${url}`);
   const response = await fetch(url, { headers: { 'User-Agent': 'Mozilla/5.0 (personal draft overlay)' } });
   if (!response.ok) throw new Error(`${url}: HTTP ${response.status}`);
-  const ratings = await response.json();
+  const body = await response.json();
+  const ratings = Array.isArray(body) ? body : body.data;
   if (!Array.isArray(ratings) || ratings.length === 0) throw new Error(`${url}: no cards`);
   const round2 = (v) => Math.round(v * 100) / 100;
   // [games, wins]; wins -1 when the site hid the rate.

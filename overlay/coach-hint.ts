@@ -4,6 +4,7 @@
 // baseline and shape prices, so the overlay and 23spells agree.
 
 import { buildDraftCards, type DraftCard } from '../coach/bot.ts';
+import { packSize, packSizeFrom, setPackSize } from '../coach/packsize.ts';
 import { buildCoachModel, evaluatePack, gradePick, type Badge, type CoachCard, type CoachModel, type PairOdds, type ShapeOdds } from '../coach/engine.ts';
 import { feederOf, readFlow, type FlowBaseline } from '../coach/flow.ts';
 import { rateSet } from '../core/stats.ts';
@@ -20,7 +21,9 @@ export type Coach = {
 
 /** Built once per set file: the same model the trainer builds at startup (App.svelte). */
 export function createCoach(data: CoachData): Coach | null {
-  const file = data.set as { set: string; cards: CoachCard[]; stats: SetStats; estimates?: Record<string, { gih: number }> };
+  const file = data.set as { set: string; cards: CoachCard[]; stats: SetStats; estimates?: Record<string, { gih: number }>; packs?: number[][] };
+  // 13-, 14- or 15-card packs: the coach counts picks by the set's real pack size.
+  setPackSize(packSizeFrom(file.packs));
   if (!file?.cards?.length || !file.stats) {
     return null;
   }
@@ -70,7 +73,7 @@ export class PackMemory {
 }
 
 /** 0-based overall pick, the trainer's round x 14 + pick. */
-export const overallPick = (view: DraftView) => (view.packNumber - 1) * 14 + (view.pickNumber - 1);
+export const overallPick = (view: DraftView) => (view.packNumber - 1) * packSize() + (view.pickNumber - 1);
 
 /** The coach's top 3, as a set of Arena card ids (the trainer's unranked hint). */
 export function topThree(coach: Coach, view: DraftView, names: (id: number) => string | undefined, memory: PackMemory): Set<number> {

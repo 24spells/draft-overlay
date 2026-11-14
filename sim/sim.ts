@@ -34,11 +34,14 @@ function make<K extends keyof HTMLElementTagNameMap>(
   return node;
 }
 
+const SIM_SET = new URLSearchParams(location.search).get('set')?.toUpperCase() ?? null;
+
 async function start(): Promise<void> {
   const [drafts, images, stats] = await Promise.all([
-    loadJson<SimDraft[]>('/sim-data/drafts.json'),
-    loadJson<Record<string, string>>('/sim-data/images.json'),
-    loadJson<SetStats>('/card-data/FRA.PremierDraft.json'),
+    // ?set=TRK previews another set (sim/make-set-sim.mjs builds its sample packs).
+    loadJson<SimDraft[]>(SIM_SET ? `/sim-data/drafts-${SIM_SET}.json` : '/sim-data/drafts.json'),
+    loadJson<Record<string, string>>(SIM_SET ? `/sim-data/images-${SIM_SET}.json` : '/sim-data/images.json'),
+    loadJson<SetStats>(`/card-data/${SIM_SET ?? 'FRA'}.PremierDraft.json`),
   ]);
 
   let draftIndex = drafts.length - 1;

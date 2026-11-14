@@ -22,6 +22,7 @@ import { tagRoles, INTERACTION, type Role } from './roles.ts';
 import { BASICS, COLOR_PAIRS, rateSet, type CardRow } from '../core/stats.ts';
 import type { SetStats } from '../core/types.ts';
 import { castableIn } from './deck.ts';
+import { packSize, pickInPack, totalPicks } from './packsize.ts';
 
 export const COLORS = ['W', 'U', 'B', 'R', 'G'] as const;
 const sortPair = (p: string) => [...p].sort().join('');
@@ -39,6 +40,8 @@ export type CoachCard = {
 
 export type CoachModel = {
   cards: CoachCard[];
+  /** Card-pair synergy (build-synergy.ts), attached after building; used when TUNING.synergyWeight > 0. */
+  synergy?: Map<number, Map<number, number>> | null;
   /** Win rate when in hand, all decks, shrunk toward the set average for thin samples. */
   gih: number[];
   /** Win rate in each pair's decks (sorted pair key), shrunk toward the card's overall rate. */
@@ -77,6 +80,8 @@ export type SplashFile = {
 };
 
 export const TUNING = {
+  /** Value per point of synergy with cards already in your pool (0 = off; tested in validate-coach). */
+  synergyWeight: 0,
   /** Games at which a card's own sample counts as much as the prior. */
   shrinkGames: 400,
   /** Filler level (a low bar: tuned 2026-11-11, distinguishing awful cards from weak ones tracks winning best). */
@@ -378,7 +383,7 @@ export const SHAPE_INDEX = new Map(SHAPES.map((s, i) => [s.key, i]));
 const PAIR_MASKS = PAIRS.map((p) => maskOf(p));
 
 /** Which pack a pool of this size is drafting (0-2). */
-export const packOf = (poolSize: number) => (poolSize < 14 ? 0 : poolSize < 28 ? 1 : 2);
+export const packOf = (poolSize: number) => Math.min(2, Math.floor(poolSize / packSize()));
 
 /** Fixing buckets used by the shape prices: 0-1, 2-3, 4+ fixers. */
 export const fixerBucket = (n: number) => (n <= 1 ? 0 : n <= 3 ? 1 : 2);
@@ -598,7 +603,7 @@ export function evaluatePack(
   const odds = marginalPairs(p0);
   const shapes = shapeOdds(p0);
   const mean = model.replacement;
-  const picksLeft = 41 - overallPick;
+  const picksLeft = totalPicks() - 1 - overallPick;
   const needs = poolNeeds(model, pool, shapes[0].shape.colors);
   // Expected final counts if the rest of the draft adds at a typical rate.
   const expectInteraction = needs.interaction + picksLeft * 0.12;
@@ -660,18 +665,25 @@ export function evaluatePack(
     if (roleTags.some((r) => INTERACTION.includes(r)) && expectInteraction < 9) {
       need = Math.min(TUNING.needCap, TUNING.needInteraction * (9 - expectInteraction));
       needReason = `your deck is short on interaction (${needs.interaction} so far, aiming for about 9)`;
-    } else if (roleTags.includes('card draw') && expectDraw < 5) {
-      need = Math.min(TUNING.needCap, TUNING.needCardDraw * (5 - expectDraw));
-      needReason = `your deck is short on card draw (${needs.draw} so far)`;
+    // No "short on card draw" bonus (2026-11-13): across 34 sets, decks with more card
+    // draw won LESS in 27 (research/draft/draft-science-2026-11-13.md); removing it left the
+    // coach's validated accuracy unchanged. TUNING.needCardDraw is kept for experiments.
     } else if (card.mv === 2 && !/Land/.test(card.type) && expectTwo < 6) {
       need = Math.min(TUNING.needCap, TUNING.needTwoDrop * (6 - expectTwo));
       needReason = `your curve needs two-drops (${needs.twoDrops} so far)`;
     }
     need *= play;
+    // Synergy with what you already have (only counts if the card makes your deck).
+    let syn = 0;
+    if (TUNING.synergyWeight > 0 && model.synergy) {
+      const m = model.synergy.get(ix);
+      if (m) for (const x of pool) syn += m.get(x) ?? 0;
+      syn *= TUNING.synergyWeight * play;
+    }
     const inTopPair = castableIn(card, [...odds[0].pair]);
     return {
       index: ix,
-      ev: ev + need,
+      ev: ev + need + syn,
       playChance: play,
       quality: model.gihPair[odds[0].pair][ix],
       need,
@@ -701,7 +713,7 @@ export const BADGE_STEPS: [number, Badge][] = [
  * Late picks (10-14 of a pack) choose between cards that rarely make the
  * deck, so a miss there counts half. A "Blunder" at pick 13 teaches nothing.
  */
-export const lateWeight = (overallPick: number) => (overallPick % 14 >= 9 ? 0.5 : 1);
+export const lateWeight = (overallPick: number) => (pickInPack(overallPick) >= packSize() - 5 ? 0.5 : 1);
 export const badgeFor = (loss: number): Badge => BADGE_STEPS.find(([max]) => loss <= max)![1];
 
 /** Per-pick accuracy, 0-100: 100 at no loss, about 50 at a 4-point loss. */

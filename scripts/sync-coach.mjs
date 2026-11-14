@@ -22,10 +22,13 @@ const FILES = [
   ['src/lib/flow.ts', 'flow.ts'],
   ['src/draft/bot.ts', 'bot.ts'],
   ['src/draft/rng.ts', 'rng.ts'],
+  // Pack size per set (13/14/15 cards), since 2026-11-13.
+  ['src/lib/packsize.ts', 'packsize.ts'],
 ];
 const IMPORTS = [
   ["'../core/roles.ts'", "'./roles.ts'"],
   ["'../lib/deck.ts'", "'./deck.ts'"],
+  ["'../lib/packsize.ts'", "'./packsize.ts'"],
   ["'../draft/bot.ts'", "'./bot.ts'"],
   // Type-only imports, erased at build: point them somewhere that exists.
   ["'./set.ts'", "'../core/types.ts'"],
