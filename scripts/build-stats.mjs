@@ -165,11 +165,13 @@ if (!early) {
 const gameFile = path.join(RAW, `game.${set}.${format}.csv.gz`);
 const draftFile = path.join(RAW, `draft.${set}.${format}.csv.gz`);
 const cardsFile = path.join(RAW, 'cards.csv');
+// Sealed (and Traditional Sealed) has no draft file: nothing is drafted, so no pick order (2026-11-14).
+const sealed = /sealed/i.test(format);
 
 console.log('Downloading public files if needed...');
 const lastModified =
   (await download(`${BASE}/game_data/game_data_public.${set}.${format}.csv.gz`, gameFile));
-await download(`${BASE}/draft_data/draft_data_public.${set}.${format}.csv.gz`, draftFile);
+if (!sealed) await download(`${BASE}/draft_data/draft_data_public.${set}.${format}.csv.gz`, draftFile);
 await download(`${BASE}/cards/cards.csv`, cardsFile);
 
 // ---------- Game file ----------
@@ -319,7 +321,7 @@ function flushDraft() {
   seen = new Map();
 }
 
-for await (const line of lines(draftFile)) {
+for await (const line of sealed ? [] : lines(draftFile)) {
   if (!draftHeader) {
     draftHeader = parseCsvLine(line);
     packCol = new Int32Array(draftHeader.length).fill(-1);
@@ -402,7 +404,7 @@ for await (const line of lines(draftFile)) {
 }
 if (currentDraft !== null) flushDraft();
 console.log(`  ${draftCount} drafts, ${pickRows} picks, ${skippedDraftRows} skipped, lowest pick_number ${minPick}`);
-if (minPick !== 0) throw new Error(`Expected 0-indexed pick_number, lowest was ${minPick}`);
+if (!sealed && minPick !== 0) throw new Error(`Expected 0-indexed pick_number, lowest was ${minPick}`);
 
 // ---------- Card list ----------
 console.log('Reading card list...');
