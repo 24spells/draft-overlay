@@ -208,8 +208,11 @@ export function mountOverlay(root: HTMLElement, api: OverlayApi): void {
   const deckLabel = element('label', 'stack-row stack-select');
   const deckSelect = element('select');
   const settingsButton = element('button', 'stack-row stack-button settings-button', 'Settings');
+  // 2026-11-13: send this draft to 23spells for the full review and deck building.
+  const reviewButton = element('button', 'stack-row stack-button review-button', 'Review in 23spells');
+  reviewButton.title = 'Open this draft on 23spells: every pick graded, then build your deck with the coach, the laws of drafting and synergy. The draft travels in the link; nothing is uploaded.';
   const foldButton = element('button', 'stack-row stack-button fold-button');
-  for (const button of [statsButton, coachButton, settingsButton, foldButton]) {
+  for (const button of [statsButton, coachButton, reviewButton, settingsButton, foldButton]) {
     button.type = 'button';
   }
   const panel = element('section', 'settings-panel');
@@ -218,7 +221,7 @@ export function mountOverlay(root: HTMLElement, api: OverlayApi): void {
 
   mainLabel.append(element('span', 'stack-label', 'Show'), wrapSelect(mainSelect));
   deckLabel.append(element('span', 'stack-label', 'Compare'), wrapSelect(deckSelect));
-  stack.append(setInfo, statsButton, coachButton, colorsRow, gradeRow, mainLabel, deckLabel, settingsButton, foldButton);
+  stack.append(setInfo, statsButton, coachButton, colorsRow, gradeRow, mainLabel, deckLabel, reviewButton, settingsButton, foldButton);
   controls.append(stack, panel, status, credit);
   root.append(plates, hoverPanel, controls, toast);
 
@@ -503,6 +506,7 @@ export function mountOverlay(root: HTMLElement, api: OverlayApi): void {
       row.hidden = folded;
     }
     renderCoachRows(folded);
+    reviewButton.hidden = folded || !api.getReview || !api.openReview || !lastView;
     foldButton.textContent = folded ? '▲ Overlay' : '▼ Close';
     foldButton.title = folded ? 'Open the overlay controls' : 'Fold the overlay controls';
 
@@ -808,6 +812,36 @@ export function mountOverlay(root: HTMLElement, api: OverlayApi): void {
       }
     }
   }
+
+  // Review in 23spells: every pick of this draft as trainer card indexes, in the link's #fragment.
+  reviewButton.addEventListener('click', async () => {
+    if (!api.getReview || !api.openReview) return;
+    reviewButton.textContent = 'Opening...';
+    try {
+      const data = await api.getReview();
+      const set = data?.setCode ?? lastView?.setCode ?? null;
+      if (!data || !set) return;
+      if (!coach || coach.set !== set) await loadCoach(set);
+      if (!coach) return;
+      const byName = coach.byName;
+      // Names can differ in punctuation between 17Lands and Scryfall ('Set Phasers to . . .'): match loosely too.
+      const loose = (n: string) => n.toLowerCase().replace(/[^a-z0-9]/g, '');
+      const byLoose = new Map([...byName].map(([n, i]) => [loose(n), i]));
+      const ix = (id: number): number | null => {
+        const name = loaded?.stats.cards[String(id)]?.name;
+        if (!name) return null;
+        return byName.get(name) ?? byName.get(name.split(' // ')[0]) ?? byLoose.get(loose(name)) ?? byLoose.get(loose(name.split(' // ')[0])) ?? null;
+      };
+      const parts = data.picks.map((p) => {
+        const taken = p.taken === null ? null : ix(p.taken);
+        const shown = p.cards.map(ix).filter((x): x is number => x !== null);
+        return [taken === null ? 'x' : taken.toString(36), ...shown.map((x) => x.toString(36))].join('.');
+      });
+      await api.openReview(`https://23spells.pages.dev/?set=${set}#review=1-${set}-${parts.join('_')}`);
+    } finally {
+      reviewButton.textContent = 'Review in 23spells';
+    }
+  });
 
   settingsButton.addEventListener('click', () => {
     panelOpen = !panelOpen;

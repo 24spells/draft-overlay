@@ -11,6 +11,7 @@ import {
   nativeImage,
   protocol,
   screen,
+  shell,
   Tray,
 } from 'electron';
 import { execFile, spawn } from 'node:child_process';
@@ -804,4 +805,50 @@ app.whenReady().then(() => {
   setInterval(() => void pollArena(), ARENA_POLL_MS);
   setTimeout(() => void refreshInBackground('app started'), REFRESH_FIRST_MS);
   setInterval(() => void refreshInBackground('every 6 hours'), REFRESH_EVERY_MS);
+});
+
+// ---------- Review in 23spells (2026-11-13) ----------
+// The current draft, read straight from Arena's log (complete even if the overlay
+// restarted mid-draft): every pick's pack and the card taken. The renderer turns it
+// into a 23spells link; the draft travels in the link itself, nothing is uploaded.
+ipcMain.handle('overlay:review', async () => {
+  let text;
+  try {
+    text = await readFile(LOG_PATH, 'utf8');
+  } catch {
+    return null;
+  }
+  let setCode = null;
+  let format = null;
+  let draftId = null;
+  let current = null;
+  let picks = [];
+  for (const line of text.split('\n')) {
+    const event = parseLogLine(line);
+    if (!event) continue;
+    if (event.type === 'joined') {
+      setCode = event.setCode;
+      format = event.format;
+    } else if (event.type === 'pack') {
+      if ((event.draftId && event.draftId !== draftId) || (event.packNumber === 1 && event.pickNumber === 1)) {
+        picks = [];
+        draftId = event.draftId ?? draftId;
+      }
+      setCode = event.setCode ?? setCode;
+      format = event.format ?? format;
+      current = { pack: event.packNumber, pick: event.pickNumber, cards: event.cardIds };
+    } else if (event.type === 'pick' && current) {
+      picks.push({ ...current, taken: event.cardIds[0] ?? null });
+      current = null;
+    }
+  }
+  return picks.length ? { setCode, format, picks } : null;
+});
+
+ipcMain.handle('overlay:open-review', (_event, url) => {
+  if (typeof url !== 'string' || !url.startsWith('https://23spells.pages.dev/')) {
+    return false;
+  }
+  void shell.openExternal(url);
+  return true;
 });

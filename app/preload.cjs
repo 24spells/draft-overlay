@@ -14,4 +14,6 @@ contextBridge.exposeInMainWorld('draftOverlay', {
   setInteractive: (interactive) =>
     ipcRenderer.send('overlay:interactive', interactive),
   getCoachData: (setCode) => ipcRenderer.invoke('overlay:coach', setCode),
+  getReview: () => ipcRenderer.invoke('overlay:review'),
+  openReview: (url) => ipcRenderer.invoke('overlay:open-review', url),
 });

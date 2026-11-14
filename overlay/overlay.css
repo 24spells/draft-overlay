@@ -787,3 +787,12 @@
 .segmented.multi button.on {
   background: #2f7f72;
 }
+
+/* Review in 23spells (2026-11-13): send the draft to the trainer for the full review. */
+.review-button {
+  color: #e9f6f2;
+  background: #2b6f63;
+}
+.review-button:hover {
+  background: #348474;
+}

@@ -73,4 +73,14 @@ export type OverlayApi = {
   setInteractive: (interactive: boolean) => void;
   /** The trainer's coach files for a set, or null (offline, or no such set on the site). */
   getCoachData?: (setCode: string) => Promise<CoachData | null>;
+  /** The current draft from Arena's log: each pick's pack and the card taken (Review in 23spells). */
+  getReview?: () => Promise<ReviewData | null>;
+  /** Opens a 23spells link in the browser (only that site). */
+  openReview?: (url: string) => Promise<boolean>;
+};
+
+export type ReviewData = {
+  setCode: string | null;
+  format: DraftFormat | null;
+  picks: { pack: number; pick: number; cards: number[]; taken: number | null }[];
 };
