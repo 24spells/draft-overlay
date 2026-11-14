@@ -1,7 +1,7 @@
 // Where each card sits on Arena's draft screen. The log lists a pack in
 // booster order, so the pack has to be re-sorted the way Arena displays it.
 
-const CARDS_PER_ROW = 5;
+const CARDS_PER_ROW = 8; // Arena 2026-11 (TRK): 8 per row, measured on a 3200x1800 window
 const RARITY_ORDER: Record<string, number> = {
   mythic: 0, rare: 1, uncommon: 2, common: 3, basic: 4,
 };
@@ -89,12 +89,12 @@ export function gridGeometry(
     const boxWidth = Math.min(width, (height * 16) / 9);
     const offset = (width - boxWidth) / 2;
     geometry = {
-      left: offset + 0.1439 * boxWidth,
-      top: 0.1697 * height,
-      stepX: 0.10209 * boxWidth,
-      stepY: 0.24815 * height,
-      cardWidth: 0.0934 * boxWidth,
-      cardHeight: 0.2309 * height,
+      left: offset + 0.1746 * boxWidth,
+      top: 0.1612 * height,
+      stepX: 0.0829 * boxWidth,
+      stepY: 0.1863 * height,
+      cardWidth: 0.0722 * boxWidth,
+      cardHeight: 0.1806 * height,
     };
   } else {
     const scale = Math.min(width / 1728, height / 1117);

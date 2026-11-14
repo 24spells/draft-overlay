@@ -164,6 +164,8 @@ type Placed = {
 export function mountOverlay(root: HTMLElement, api: OverlayApi): void {
   const settings = loadSettings();
   let view: DraftView | null = null;
+  /** The last pack shown, so the panel can say "waiting for the next pack" between picks (2026-11-13). */
+  let lastView: DraftView | null = null;
   let loaded: LoadedStats | null = null;
   let loadedFor = '';
   let hidden = false;
@@ -506,7 +508,9 @@ export function mountOverlay(root: HTMLElement, api: OverlayApi): void {
 
     setInfo.textContent = view
       ? `${view.setCode ?? loaded?.stats.set ?? '?'} · ${FORMAT_NAMES[view.format] ?? 'Draft'}`
-      : 'No draft open';
+      : lastView && !(lastView.packNumber >= 3 && lastView.cardIds.length <= 1)
+        ? `${lastView.setCode ?? loaded?.stats.set ?? '?'} · waiting for the next pack`
+        : 'No draft open';
 
     statsButton.textContent = `Stats: ${settings.showStats ? 'ON' : 'OFF'}`;
     statsButton.classList.toggle('on', settings.showStats);
@@ -979,6 +983,7 @@ export function mountOverlay(root: HTMLElement, api: OverlayApi): void {
 
   api.onDraftView(async (next) => {
     view = next;
+    if (next) lastView = next;
     peek = false;
     if (next) {
       // Keyed by draft too, so a new draft picks up stats refreshed in the background.

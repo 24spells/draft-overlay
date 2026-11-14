@@ -123,7 +123,7 @@ describe('stats', () => {
 });
 
 describe('layout', () => {
-  it('sorts by rarity, then color, and flows 5 across', () => {
+  it('sorts by rarity, then color, and flows 8 across', () => {
     const cards = [
       { id: 1, rarity: 'common', color: 'G' },
       { id: 2, rarity: 'common', color: 'W' },
@@ -134,7 +134,8 @@ describe('layout', () => {
     ];
     const placed = positionCards(cards);
     assert.deepEqual(placed.map((p) => p.card.id), [3, 5, 4, 2, 1, 6]);
-    assert.deepEqual([placed[5].column, placed[5].row], [0, 1]);
+    // Arena (Nov 2026, TRK) shows 8 cards per row; measured on a 3200x1800 window.
+    assert.deepEqual([placed[5].column, placed[5].row], [5, 0]);
   });
 
   it('keeps unknown cards in the grid', () => {
