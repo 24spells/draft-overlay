@@ -829,12 +829,15 @@ export function mountOverlay(root: HTMLElement, api: OverlayApi): void {
       }
       if (!coach || coach.set !== set) await loadCoach(set);
       if (!coach) return;
+      // Card names from the set's stats: load them if no pack has been shown since the overlay started
+      // (after a restart, 'loaded' is empty and every card came out unknown: 2026-11-13).
+      const stats = loaded && loaded.stats.set === set ? loaded : await api.getSetStats(set, data.format ?? 'PremierDraft', data.picks.flatMap((p) => p.cards));
       const byName = coach.byName;
       // Names can differ in punctuation between 17Lands and Scryfall ('Set Phasers to . . .'): match loosely too.
       const loose = (n: string) => n.toLowerCase().replace(/[^a-z0-9]/g, '');
       const byLoose = new Map([...byName].map(([n, i]) => [loose(n), i]));
       const ix = (id: number): number | null => {
-        const name = loaded?.stats.cards[String(id)]?.name;
+        const name = stats?.stats.cards[String(id)]?.name;
         if (!name) return null;
         return byName.get(name) ?? byName.get(name.split(' // ')[0]) ?? byLoose.get(loose(name)) ?? byLoose.get(loose(name.split(' // ')[0])) ?? null;
       };
@@ -843,6 +846,11 @@ export function mountOverlay(root: HTMLElement, api: OverlayApi): void {
         const shown = p.cards.map(ix).filter((x): x is number => x !== null);
         return [taken === null ? 'x' : taken.toString(36), ...shown.map((x) => x.toString(36))].join('.');
       });
+      if (parts.filter((x) => !x.startsWith('x')).length < data.picks.length / 2) {
+        reviewButton.textContent = "Couldn't read this draft's cards";
+        await new Promise((r) => setTimeout(r, 2200));
+        return;
+      }
       await api.openReview(`https://23spells.pages.dev/?set=${set}#review=1-${set}-${parts.join('_')}`);
     } finally {
       reviewButton.textContent = 'Review in 23spells';
