@@ -30,6 +30,7 @@ import path from 'node:path';
 import readline from 'node:readline';
 import { DraftTracker, parseLogLine } from './build/core/log-parser.js';
 import { LogWatcher } from './build/core/log-watcher.js';
+import { createArenaRecorder } from './arena-sync.mjs';
 
 const ROOT = app.getAppPath();
 const APP_DIR = path.join(ROOT, 'app');
@@ -78,6 +79,10 @@ let view = null;
 let viewDirty = false;
 let live = false;
 let saveFile = null;
+/** Real drafts and games, recorded and sent to 23spells (see arena-sync.mjs). */
+let arena = null;
+// A draft or game just ended: re-read the log for records.
+const RECORD_MARKERS = ['GameStage_GameOver', 'MatchGameRoomStateType_MatchCompleted', 'DraftCompleteDraft', 'EventSetDeck'];
 let statusText = 'Waiting for Arena';
 const statsCache = new Map();
 const dataChecked = new Set();
@@ -150,9 +155,55 @@ function refreshTray() {
         click: (item) => applyStartWithWindows(item.checked),
       },
       { type: 'separator' },
+      ...arenaMenu(),
+      { type: 'separator' },
       { label: 'Quit', click: () => app.quit() },
     ]),
   );
+}
+
+function arenaMenu() {
+  if (!arena) return [];
+  const s = arena.status();
+  const games = `${s.total} draft and game record${s.total === 1 ? '' : 's'} on this PC`;
+  if (!s.connected) {
+    return [
+      { label: `23spells: not connected (${games})`, enabled: false },
+      { label: 'Connect to 23spells...', click: () => arena.connect((url) => shell.openExternal(url)) },
+    ];
+  }
+  return [
+    { label: `23spells: ${s.connected}${s.waiting ? `, ${s.waiting} to send` : ', all sent'}${s.error ? ` (${s.error})` : ''}`, enabled: false },
+    { label: 'Open my Arena games', click: () => void shell.openExternal('https://23spells.pages.dev/#arena') },
+    { label: 'Send now', click: () => void arena.scanAll() },
+    { label: 'Disconnect from 23spells', click: () => arena.disconnect() },
+  ];
+}
+
+// Card names for records: the set's stats file, then 17Lands' full card list.
+let cardList = null;
+function namesFor(setCode, ids) {
+  const out = {};
+  const stats = setCode ? loadStats(setCode, FORMAT) : null;
+  for (const id of ids) {
+    const name = stats?.cards[String(id)]?.name;
+    if (name) out[id] = name;
+  }
+  if (ids.some((id) => !out[id])) {
+    if (!cardList) {
+      cardList = new Map();
+      try {
+        for (const line of readFileSync(path.join(DATA_DIR, 'raw', 'cards.csv'), 'utf8').split(/\r?\n/).slice(1)) {
+          const m = /^(\d+),[^,]*,("(?:[^"]|"")*"|[^,]*)/.exec(line);
+          if (m) cardList.set(Number(m[1]), m[2].replace(/^"|"$/g, '').replace(/""/g, '"'));
+        }
+      } catch {
+        // No card list yet: names fill in from the stats files.
+      }
+    }
+    for (const id of ids) if (!out[id] && cardList.has(id)) out[id] = cardList.get(id);
+  }
+  return out;
 }
 
 function setStatus(text) {
@@ -336,6 +387,7 @@ function handleLogLine(line) {
   if (line.includes('DETAILED LOGS: DISABLED')) {
     setStatus('Turn on Detailed Logs in Arena settings');
   }
+  watchForRecords(line);
   const event = parseLogLine(line);
   if (!event) {
     return;
@@ -344,6 +396,10 @@ function handleLogLine(line) {
     viewDirty = true;
   }
   saveLine(line, event);
+}
+
+function watchForRecords(line) {
+  if (arena && RECORD_MARKERS.some((m) => line.includes(m))) arena.soon();
 }
 
 function flushView() {
@@ -719,6 +775,7 @@ function arenaClosed() {
   stopWatching();
   foreground = null;
   updateVisibility();
+  arena?.soon();
 }
 
 async function pollArena() {
@@ -799,6 +856,8 @@ app.whenReady().then(() => {
 
   applyStartWithWindows(readSettings().startWithWindows);
   tray = new Tray(trayIcon());
+  arena = createArenaRecorder({ userDir: USER_DIR, logPath: LOG_PATH, namesFor, onChange: refreshTray, log: logData });
+  setTimeout(() => void arena.scanAll(), 15_000);
   refreshTray();
   overlay = createOverlay();
   void pollArena();

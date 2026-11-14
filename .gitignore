@@ -171,3 +171,8 @@ saved-drafts/
 
 # Installer output
 dist/
+
+# Real Arena records and raw logs (dev runs write them here; logs contain player names)
+arena-records/
+arena-logs/
+arena-sync.json
