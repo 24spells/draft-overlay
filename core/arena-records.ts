@@ -67,7 +67,12 @@ export type ArenaGameRecord = {
   oppSeen: number[];
   /** Your cards still in hand when the game ended. */
   stuck: number[];
+  /** Your Arena Limited rank when the game started (from the last rank Arena logged), for 24spells. */
+  rank?: ArenaRank | null;
 };
+
+/** Arena's Limited rank: class (Bronze ... Mythic), tier 1-4, Mythic percentile or place, season. */
+export type ArenaRank = { cls: string; level: number | null; pct: number | null; place: number | null; season: number | null };
 
 /**
  * A sealed (or traditional sealed) pool (2026-11-14: "a single push button to export the pool into
@@ -130,6 +135,10 @@ export function readArenaLog(text: string): ArenaRecords {
   let draft: ArenaDraftRecord | null = null;
   let pending: { pack: number; pick: number; shown: number[] } | null = null;
   let joined: { event: string; set: string; format: string } | null = null;
+  /** The latest Limited rank Arena logged (RankGetCombinedRankInfo, at login and after events). */
+  let rank: ArenaRank | null = null;
+  /** Games that started before this log showed any rank: they take the first rank logged after them. */
+  let unranked: ArenaGameRecord[] = [];
 
   // The game in progress.
   let seat = 0;
@@ -172,6 +181,22 @@ export function readArenaLog(text: string): ArenaRecords {
     if (head) {
       const t = Date.parse(head[2] ? head[1] : `${head[1]} UTC`);
       if (Number.isFinite(t)) now = t;
+    }
+    // Your rank (2026-11-15, for 24spells titles): the response to RankGetCombinedRankInfo is one
+    // JSON line with limitedClass, limitedLevel and, at Mythic, a percentile or leaderboard place.
+    if (line.startsWith('{') && line.includes('"limitedClass"')) {
+      try {
+        const r = JSON.parse(line) as Record<string, unknown>;
+        const n = (v: unknown) => (typeof v === 'number' && Number.isFinite(v) ? v : null);
+        if (typeof r.limitedClass === 'string') {
+          rank = { cls: r.limitedClass, level: n(r.limitedLevel), pct: n(r.limitedPercentile), place: n(r.limitedLeaderboardPlace), season: n(r.limitedSeasonOrdinal) };
+          for (const old of unranked) old.rank = rank;
+          unranked = [];
+        }
+      } catch {
+        // A cut-off line: keep the last good rank.
+      }
+      continue;
     }
     // Courses: Arena repeats each course (id, event, record) in several responses.
     if (line.includes('"CourseId"')) {
@@ -289,9 +314,10 @@ export function readArenaLog(text: string): ArenaRecords {
           g = {
             kind: 'game', id, matchId: info.matchID, game: info.gameNumber, course: event ? courseOf.get(event) ?? null : null, event,
             at: now, ended: null, onPlay: null, result: null, reason: null, deck: [...deck], side: [...side],
-            hands: [], kept: [], turns: [], oppSeen: [], stuck: [],
+            hands: [], kept: [], turns: [], oppSeen: [], stuck: [], rank,
           };
           games.set(id, g);
+          if (!rank) unranked.push(g);
           objects = new Map();
           zones = new Map();
           team = new Map();

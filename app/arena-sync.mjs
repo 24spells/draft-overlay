@@ -71,7 +71,7 @@ export function createArenaRecorder({ userDir, logPath, namesFor, onChange = () 
 
   function summaryOf(rec, set) {
     if (rec.kind === 'draft') return { set, event: rec.event, picks: rec.picks.length, wins: rec.wins, losses: rec.losses };
-    return { set, event: rec.event, game: rec.game, result: rec.result, onPlay: rec.onPlay, mulligans: Math.max(0, rec.hands.length - 1), turns: rec.turns.filter((t) => t.me).length };
+    return { set, event: rec.event, game: rec.game, result: rec.result, onPlay: rec.onPlay, mulligans: Math.max(0, rec.hands.length - 1), turns: rec.turns.filter((t) => t.me).length, rank: rec.rank ?? null };
   }
 
   /** Read one log and save its records. Returns how many records changed. */
