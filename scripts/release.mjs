@@ -16,6 +16,7 @@
 // (outside Drive and this repo). Until those exist this stops with instructions.
 import { execSync } from 'node:child_process';
 import { existsSync, readFileSync, writeFileSync } from 'node:fs';
+import { homedir } from 'node:os';
 import path from 'node:path';
 
 const ROOT = path.resolve(import.meta.dirname, '..');
@@ -34,7 +35,7 @@ const stop = (why) => {
 if (!config.owner || !config.repo) {
   stop('release.config.json has no GitHub "owner" and "repo" yet. Make the repo (public, so downloads and updates need no login), fill both in, and run again.');
 }
-const SECRETS = '~/.draft-trainer-secrets/github.env';
+const SECRETS = path.join(homedir(), '.draft-trainer-secrets', 'github.env');
 let token = process.env.GH_TOKEN ?? '';
 if (!token && existsSync(SECRETS)) token = /^GH_TOKEN=(.+)$/m.exec(readFileSync(SECRETS, 'utf8'))?.[1]?.trim() ?? '';
 if (!dry && !token) stop(`no GitHub token. Put GH_TOKEN=... in ${SECRETS} (a fine-grained token with Contents: write on ${config.owner}/${config.repo}).`);
@@ -70,7 +71,7 @@ if (dry) {
 }
 
 // 3. The site's release file.
-const site = config.site ?? '~/draft-trainer';
+const site = path.resolve(ROOT, config.site ?? '../draft-trainer');
 const latestPath = path.join(site, 'public', 'overlay', 'latest.json');
 let latest = {};
 try {

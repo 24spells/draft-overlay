@@ -6,7 +6,7 @@ import { readFileSync, writeFileSync, existsSync, copyFileSync } from 'node:fs';
 import path from 'node:path';
 const set = (process.argv[2] ?? 'TRK').toUpperCase();
 const ROOT = path.resolve(import.meta.dirname, '..');
-const trainer = JSON.parse(readFileSync(`~/draft-trainer/public/sets/${set}.json`, 'utf8'));
+const trainer = JSON.parse(readFileSync(path.resolve(ROOT, `../draft-trainer/public/sets/${set}.json`), 'utf8'));
 // The live stats the installed app uses; copied next to the preview so it shows the same numbers.
 const live = path.join(process.env.APPDATA, 'Draft Overlay', 'card-data', `${set}.PremierDraft.json`);
 const local = path.join(ROOT, 'card-data', `${set}.PremierDraft.json`);
