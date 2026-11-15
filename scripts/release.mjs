@@ -11,9 +11,9 @@
 //
 // --dry builds everything (feed included) but uploads nothing and leaves latest.json alone.
 //
-// Needs (once): release.config.json with the GitHub owner and repo, and a GitHub token with
-// "contents: write" on that repo in ~/.draft-trainer-secrets/github.env as GH_TOKEN=...
-// (outside Drive and this repo). Until those exist this stops with instructions.
+// Needs (once): release.config.json with the GitHub owner and repo, and a login that can write to
+// that repo: the GitHub CLI signed in as the owner (`gh auth login`), or GH_TOKEN in the environment
+// or in ~/.draft-trainer-secrets/github.env (outside this repo). Until then this stops with instructions.
 import { execSync } from 'node:child_process';
 import { existsSync, readFileSync, writeFileSync } from 'node:fs';
 import { homedir } from 'node:os';
@@ -38,7 +38,14 @@ if (!config.owner || !config.repo) {
 const SECRETS = path.join(homedir(), '.draft-trainer-secrets', 'github.env');
 let token = process.env.GH_TOKEN ?? '';
 if (!token && existsSync(SECRETS)) token = /^GH_TOKEN=(.+)$/m.exec(readFileSync(SECRETS, 'utf8'))?.[1]?.trim() ?? '';
-if (!dry && !token) stop(`no GitHub token. Put GH_TOKEN=... in ${SECRETS} (a fine-grained token with Contents: write on ${config.owner}/${config.repo}).`);
+if (!token) {
+  try {
+    token = execSync('gh auth token', { encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'] }).trim();
+  } catch {
+    // The GitHub CLI isn't installed or isn't signed in.
+  }
+}
+if (!dry && !token) stop(`no GitHub login. Run \`gh auth login\` as ${config.owner}, or put GH_TOKEN=... in ${SECRETS}.`);
 
 // 1. Version.
 const pkgPath = path.join(ROOT, 'package.json');
