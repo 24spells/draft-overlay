@@ -7,6 +7,8 @@ import { buildDraftCards, type DraftCard } from '../coach/bot.ts';
 import { packSize, packSizeFrom, setPackSize } from '../coach/packsize.ts';
 import { buildCoachModel, evaluatePack, gradePick, type Badge, type CoachCard, type CoachModel, type PairOdds, type ShapeOdds } from '../coach/engine.ts';
 import { feederOf, readFlow, type FlowBaseline } from '../coach/flow.ts';
+import { buildFacts, type CardFacts, type FactCard } from '../coach/facts.ts';
+import { tagRoles, type Role } from '../coach/roles.ts';
 import { rateSet } from '../core/stats.ts';
 import type { CoachData, DraftView, SetStats } from '../core/types.ts';
 
@@ -17,6 +19,10 @@ export type Coach = {
   flow: FlowBaseline | null;
   /** Card name -> index in the trainer's card list. */
   byName: Map<string, number>;
+  /** The hover panel's card notes, built exactly as the site builds them (set.ts). */
+  facts: Map<string, CardFacts>;
+  /** What each card does (Removal, Card draw...), the site's role chips. */
+  roles: Map<string, { role: Role; why: string }[]>;
 };
 
 /** Built once per set file: the same model the trainer builds at startup (App.svelte). */
@@ -36,6 +42,9 @@ export function createCoach(data: CoachData): Coach | null {
       rows.set(name, { ...row, values: { ...row.values, gih: e.gih, games: 300 } });
     }
   }
+  // The card notes: the site's facts on the site's default rating (all decks, all players).
+  const factCards = (file.cards as unknown as FactCard[]).map((card) => ({ ...card, roles: tagRoles(card) }));
+  const factRows = rateSet(file.stats, { deck: 'ALL', players: 'all', basis: 'gih', minGames: 500 });
   const shapeTax = (data.builds as { shapeTax?: Record<string, number[]> } | null)?.shapeTax ?? null;
   return {
     set: file.set,
@@ -43,6 +52,8 @@ export function createCoach(data: CoachData): Coach | null {
     draftCards: buildDraftCards(file.cards as never, rows),
     flow: (data.flow as FlowBaseline | null) ?? null,
     byName: new Map(file.cards.map((card, index) => [card.name, index])),
+    facts: buildFacts(factCards, factRows, file.stats),
+    roles: new Map(factCards.map((card) => [card.name, card.roles])),
   };
 }
 

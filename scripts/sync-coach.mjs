@@ -24,12 +24,17 @@ const FILES = [
   ['src/draft/rng.ts', 'rng.ts'],
   // Pack size per set (13/14/15 cards), since 2026-11-13.
   ['src/lib/packsize.ts', 'packsize.ts'],
+  // The card notes in the hover panel (Does, Colors, Body, Timing...), same as the site's hover (2026-11-15).
+  ['src/core/facts.ts', 'facts.ts'],
 ];
 const IMPORTS = [
   ["'../core/roles.ts'", "'./roles.ts'"],
   ["'../lib/deck.ts'", "'./deck.ts'"],
   ["'../lib/packsize.ts'", "'./packsize.ts'"],
   ["'../draft/bot.ts'", "'./bot.ts'"],
+  // facts.ts sits beside stats.ts and types.ts in the trainer's core/; here those live in ../core/.
+  ["'./stats.ts'", "'../core/stats.ts'"],
+  ["'./types.ts'", "'../core/types.ts'"],
   // Type-only imports, erased at build: point them somewhere that exists.
   ["'./set.ts'", "'../core/types.ts'"],
   ["'../draft/engine.ts'", "'../core/types.ts'"],

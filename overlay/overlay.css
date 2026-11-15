@@ -534,115 +534,242 @@
   display: block;
 }
 
+/* The site's hover (CardStats + CardNotes): grade and headline, percentile bars, card notes. */
 .hover-head {
   display: flex;
   align-items: center;
-  justify-content: space-between;
-  gap: 1em;
-  margin-bottom: 0.9em;
-}
-
-.hover-head h3 {
-  margin: 0;
-  font-size: 1.45em;
-  font-weight: 800;
-  line-height: 1.15;
+  gap: 0.8em;
 }
 
 .hover-grade {
   display: grid;
-  flex: 0 0 auto;
-  min-width: 2.3em;
-  padding: 0.28em 0.4em;
+  flex: none;
+  width: 2.15em;
+  height: 2.15em;
   place-items: center;
-  border-radius: 0.3em;
+  border-radius: 0.5em;
   background: var(--grade);
-  color: #101318;
-  font-size: 1.7em;
-  font-weight: 900;
+  color: #0c0d10;
+  font-size: 1.45em;
+  font-weight: 800;
   line-height: 1;
 }
 
-.hover-table {
-  width: 100%;
-  border-collapse: collapse;
-  font-variant-numeric: tabular-nums;
-}
-
-.hover-table th {
-  padding: 0 0.7em 0.5em;
-  color: #aeb4bf;
-  font-size: 0.82em;
-  font-weight: 700;
-  text-align: right;
-}
-
-.hover-table td {
-  padding: 0.5em 0.7em;
-  border-top: 1px solid rgb(255 255 255 / 14%);
-  color: #e6e8ec;
-  font-weight: 600;
-}
-
-.hover-table td:first-child {
-  padding-left: 0;
-}
-
-.hover-table td.value,
-.hover-table td.difference {
-  font-size: 1.12em;
-  font-weight: 800;
-  text-align: right;
-}
-
-.hover-table td:last-child,
-.hover-table th:last-child {
-  padding-right: 0;
-}
-
-.hover-table td.value {
-  color: #fff;
-}
-
-.hover-table td.up {
-  color: #6fdc8f;
-}
-
-.hover-table td.down {
-  color: #ff8f73;
-}
-
-.hover-tiles {
-  display: grid;
-  grid-template-columns: repeat(4, 1fr);
-  gap: 0.55em;
-  margin-top: 0.9em;
-}
-
-.hover-tile {
+.hover-herotext {
   display: flex;
+  min-width: 0;
   flex-direction: column;
-  gap: 0.35em;
-  padding: 0.65em 0.55em;
-  border-radius: 0.45em;
-  background: #1b1f27;
-  text-align: center;
+  gap: 0.15em;
 }
 
-.tile-value {
-  color: #fff;
-  font-size: 1.4em;
+.hover-herotext h3 {
+  margin: 0;
+  font-size: 1.15em;
+  font-weight: 800;
+  line-height: 1.2;
+}
+
+.hover-better {
+  margin: 0;
+  color: #ecedf0;
+  font-size: 1.02em;
+  font-weight: 700;
+  line-height: 1.25;
+}
+
+.hover-herotext .hover-note {
+  margin: 0;
+}
+
+.sb-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  margin: 0.95em 0 0.15em;
+  padding-bottom: 0.4em;
+  border-bottom: 1px solid #2e323a;
+  color: #a3a8b3;
+  font-size: 0.74em;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
+.sb-head span {
+  color: #767c88;
+  font-weight: 400;
+  letter-spacing: 0;
+  text-transform: none;
+}
+
+.sb-row {
+  display: grid;
+  grid-template-columns: minmax(6.5em, 36%) 1fr 4.6em;
+  align-items: center;
+  gap: 0.7em;
+  min-height: 2.15em;
+}
+
+.sb-row.dim {
+  opacity: 0.55;
+}
+
+.sb-label {
+  color: #ecedf0;
+  font-size: 0.9em;
+  line-height: 1.2;
+}
+
+.sb-track {
+  position: relative;
+  height: 0.38em;
+  margin: 0 0.9em;
+  border-radius: 999px;
+  background: #2b2f37;
+}
+
+.sb-fill {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: 0;
+  border-radius: 999px;
+  opacity: 0.4;
+}
+
+.sb-dot {
+  position: absolute;
+  top: 50%;
+  display: grid;
+  width: 1.75em;
+  height: 1.75em;
+  place-items: center;
+  border-radius: 50%;
+  box-shadow: 0 0 0 2px #0d0f13, 0 1px 4px rgb(0 0 0 / 40%);
+  color: #0c0d10;
+  font-size: 0.72em;
   font-variant-numeric: tabular-nums;
   font-weight: 800;
-  line-height: 1;
+  transform: translate(-50%, -50%);
 }
 
-.tile-label {
-  color: #c6cbd4;
-  font-size: 0.76em;
+.sb-value {
+  color: #ecedf0;
+  font-size: 0.9em;
+  font-variant-numeric: tabular-nums;
   font-weight: 600;
-  line-height: 1.15;
+  text-align: right;
 }
+
+.hover-notes {
+  margin: 0.9em 0 0;
+  padding: 0.1em 0.85em;
+  border-radius: 0.7em;
+  background: #20232a;
+  font-size: 0.86em;
+}
+
+.hover-notes div {
+  display: grid;
+  grid-template-columns: 6.6em 1fr;
+  gap: 0.8em;
+  align-items: baseline;
+  padding: 0.45em 0;
+}
+
+.hover-notes div + div {
+  border-top: 1px solid #2e323a;
+}
+
+.hover-notes div:has(.chips) {
+  align-items: center;
+}
+
+.hover-notes dt {
+  color: #a3a8b3;
+  font-size: 0.8em;
+  font-weight: 700;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+}
+
+.hover-notes dd {
+  margin: 0;
+  color: #ecedf0;
+  line-height: 1.4;
+}
+
+.hover-notes .chips {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.4em;
+}
+
+.hover-notes .role {
+  padding: 0.1em 0.7em;
+  border-radius: 999px;
+  background: #2b2f37;
+  font-size: 0.93em;
+  font-weight: 600;
+}
+
+.hover-notes .cp {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4em;
+  padding: 0.1em 0.6em;
+  border: 1px solid #2e323a;
+  border-radius: 999px;
+  background: #181a1f;
+  font-size: 0.93em;
+  font-variant-numeric: tabular-nums;
+}
+
+.hover-notes .cp b {
+  font-weight: 800;
+}
+
+.hover-notes .cp small {
+  color: #767c88;
+  font-size: 0.85em;
+}
+
+.hover-notes .cp.good b {
+  color: #55c878;
+}
+
+.hover-notes .cp.bad b {
+  color: #e56b3f;
+}
+
+.hover-notes .cp.best {
+  border-color: #55c878;
+  background: rgb(85 200 120 / 12%);
+}
+
+.hover-notes .key {
+  color: #767c88;
+  font-size: 0.8em;
+}
+
+.pips {
+  display: inline-flex;
+}
+
+.pip {
+  width: 0.95em;
+  height: 0.95em;
+  margin: 0 0.05em;
+  border-radius: 50%;
+  box-shadow: 0 0 0 1px rgb(0 0 0 / 35%);
+}
+
+.pip-w { background: #f8f3d6; }
+.pip-u { background: #a9d4ef; }
+.pip-b { background: #b9aeb0; }
+.pip-r { background: #f3a68c; }
+.pip-g { background: #9ed2ab; }
 
 .hover-note {
   margin: 0.6em 0 0;

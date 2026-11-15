@@ -3,6 +3,8 @@
 
 import { coachRead, createCoach, gradeTaken, PackMemory, type Coach, type CoachRead, type PackInput, type PickResult } from './coach-hint.ts';
 import { gradeScore } from '../core/grades.ts';
+import { factLines, pairName } from '../coach/facts.ts';
+import { ROLE_LABELS } from '../coach/roles.ts';
 import {
   cardRect,
   gridGeometry,
@@ -147,6 +149,114 @@ function wrapSelect(select: HTMLSelectElement): HTMLElement {
   return wrap;
 }
 
+// ---------- The site's hover panel (draft-trainer CardStats + CardNotes), 2026-11-15 ----------
+// Ken: "our overlay vs our hover should match ... the current hover on the site". Same sections,
+// same labels, same percentile math and colors; built in plain DOM here.
+
+/** Stats where a lower number is better (taken earlier = valued more). */
+const LOWER_IS_BETTER: MetricId[] = ['ata', 'alsa'];
+const RANKED: MetricId[] = ['gih', 'oh', 'gd', 'gp', 'iwd', 'ata', 'alsa'];
+const BASIC_LANDS = new Set(['Plains', 'Island', 'Swamp', 'Mountain', 'Forest']);
+
+type Ranks = { percentiles: Map<string, Partial<Record<MetricId, number>>>; poolSize: number };
+
+/** Each card's percentile (1-99) among the set's cards with enough games: the site's rankAll. */
+function rankAll(rows: Map<string, CardRow>): Ranks {
+  const pool = [...rows.values()].filter((row) => !row.lowSample && !BASIC_LANDS.has(row.name));
+  const percentiles = new Map<string, Partial<Record<MetricId, number>>>();
+  for (const metric of RANKED) {
+    const values = pool.map((row) => row.values[metric]).filter((v): v is number => v !== null).sort((a, b) => a - b);
+    if (values.length === 0) continue;
+    for (const row of rows.values()) {
+      const value = row.values[metric];
+      if (value === null || BASIC_LANDS.has(row.name)) continue;
+      let below = 0;
+      let equal = 0;
+      for (const v of values) {
+        if (v < value) below += 1;
+        else if (v === value) equal += 1;
+      }
+      let pct = ((below + equal / 2) / values.length) * 100;
+      if (LOWER_IS_BETTER.includes(metric)) pct = 100 - pct;
+      const entry = percentiles.get(row.name) ?? {};
+      entry[metric] = Math.max(1, Math.min(99, Math.round(pct)));
+      percentiles.set(row.name, entry);
+    }
+  }
+  return { percentiles, poolSize: pool.length };
+}
+
+// The same scale as the grade badges: red (F) to green (A).
+const PCT_SCALE: [number, [number, number, number]][] = [
+  [0, [239, 107, 107]],
+  [25, [240, 163, 90]],
+  [50, [217, 211, 106]],
+  [75, [155, 211, 106]],
+  [100, [95, 211, 141]],
+];
+
+function percentileColor(pct: number): string {
+  for (let i = 1; i < PCT_SCALE.length; i += 1) {
+    const [hi, c1] = PCT_SCALE[i];
+    if (pct <= hi) {
+      const [lo, c0] = PCT_SCALE[i - 1];
+      const t = (pct - lo) / (hi - lo);
+      return `rgb(${c0.map((c, k) => Math.round(c + (c1[k] - c) * t)).join(' ')})`;
+    }
+  }
+  return `rgb(${PCT_SCALE[PCT_SCALE.length - 1][1].join(' ')})`;
+}
+
+const PERFORMANCE: { metric: MetricId; label: string }[] = [
+  { metric: 'gih', label: 'When in hand' },
+  { metric: 'oh', label: 'In opening hand' },
+  { metric: 'gd', label: 'Drawn later' },
+  { metric: 'gp', label: 'In the deck' },
+  { metric: 'iwd', label: 'Lift when drawn' },
+];
+const DEMAND: { metric: MetricId; label: string }[] = [
+  { metric: 'ata', label: 'Taken at' },
+  { metric: 'alsa', label: 'Last seen at' },
+];
+
+function statValue(metric: MetricId, value: number | null): string {
+  if (value === null) return '-';
+  if (metric === 'iwd') return `${formatMetric(metric, value)} pts`;
+  if (metric === 'ata' || metric === 'alsa') return `pick ${value.toFixed(1)}`;
+  return `${value.toFixed(1)}%`;
+}
+
+/** One Savant-style row: label, a percentile track with a colored dot, value (the site's StatBar). */
+function statBar(label: string, value: string, pct: number | null, dim: boolean): HTMLElement {
+  const bar = element('div', dim ? 'sb-row dim' : 'sb-row');
+  const track = element('div', 'sb-track');
+  if (pct !== null) {
+    const color = percentileColor(pct);
+    const fill = element('div', 'sb-fill');
+    fill.style.width = `${pct}%`;
+    fill.style.background = color;
+    const dot = element('div', 'sb-dot', String(pct));
+    dot.style.left = `${pct}%`;
+    dot.style.background = color;
+    track.append(fill, dot);
+  }
+  bar.append(element('span', 'sb-label', label), track, element('span', 'sb-value', value));
+  return bar;
+}
+
+function sectionHead(title: string, note: string): HTMLElement {
+  const head = element('h4', 'sb-head', title);
+  head.append(element('span', undefined, note));
+  return head;
+}
+
+/** A color pair as two mana pips, like the site's {U}{B}. */
+function pairPips(pair: string): HTMLElement {
+  const wrap = element('span', 'pips');
+  for (const color of pair) wrap.append(element('span', `pip pip-${color.toLowerCase()}`));
+  return wrap;
+}
+
 function gradeClass(row: CardRow | undefined): string {
   return `grade-${row?.grade?.charAt(0).toLowerCase() ?? 'none'}`;
 }
@@ -178,6 +288,8 @@ export function mountOverlay(root: HTMLElement, api: OverlayApi): void {
   let mouseX = -1;
   let mouseY = -1;
   let averages: Record<MetricId, number | null> | null = null;
+  /** Percentiles for the hover panel, on the same rating as the plates. */
+  let ranks: Ranks | null = null;
   /** The web trainer's coach for the set in front of you (null until loaded, or if the site has no such set). */
   let coach: Coach | null = null;
   let coachFor = '';
@@ -333,6 +445,7 @@ export function mountOverlay(root: HTMLElement, api: OverlayApi): void {
       minGames: settings.minGames,
     });
     averages = averageValues(ratings);
+    ranks = rankAll(ratings);
     const geometry = gridGeometry(
       window.innerWidth,
       window.innerHeight,
@@ -431,61 +544,83 @@ export function mountOverlay(root: HTMLElement, api: OverlayApi): void {
     }
 
     const row = hovered.row;
+    const name = hovered.meta?.name ?? 'Unknown card';
+    const setCode = view?.setCode ?? '';
+    const deck = activeDeck().key;
+    const within = deck === 'ALL' ? `${setCode} cards` : `${setCode} cards in ${deck} decks`;
+    const pcts = ranks?.percentiles.get(name);
+    const headline = pcts?.gih ?? null;
+
+    // Grade and headline: the site's CardStats hero, plus the name (no card picture: it's under your mouse).
     const head = element('header', 'hover-head');
-    head.append(
-      element('h3', undefined, hovered.meta?.name ?? 'Unknown card'),
-      element('strong', `hover-grade ${gradeClass(row)}`, row?.grade ?? '-'),
-    );
+    head.append(element('strong', `hover-grade ${gradeClass(row)}`, row?.grade ?? '-'));
+    const herotext = element('div', 'hover-herotext');
+    herotext.append(element('h3', undefined, name));
+    if (row && headline !== null) {
+      const line = element('p', 'hover-better', 'Better than ');
+      const pct = element('b', undefined, `${headline}%`);
+      pct.style.color = percentileColor(headline);
+      line.append(pct, ` of ${within}`);
+      herotext.append(line);
+    }
+    if (row?.lowSample) {
+      herotext.append(element('p', 'hover-note', `Only ${formatMetric('games', row.values.games)} games: read loosely`));
+    }
+    head.append(herotext);
     hoverPanel.append(head);
 
-    const table = element('table', 'hover-table');
-    const headRow = element('tr');
-    headRow.append(
-      element('th'),
-      element('th', undefined, 'Win rate'),
-      element('th', undefined, 'vs average card'),
-    );
-    const thead = element('thead');
-    thead.append(headRow);
-    const tbody = element('tbody');
-    const winRates: MetricId[] = ['gih', 'oh', 'gd', 'gp', 'gns'];
-    for (const metric of winRates) {
-      const value = row?.values[metric] ?? null;
-      const average = averages?.[metric] ?? null;
-      const difference = value !== null && average !== null ? value - average : null;
-      const tr = element('tr');
-      tr.append(
-        element('td', undefined, METRICS[metric].name),
-        element('td', 'value', formatMetric(metric, value)),
-        element(
-          'td',
-          difference === null || Math.abs(difference) < 0.05
-            ? 'difference'
-            : `difference ${difference > 0 ? 'up' : 'down'}`,
-          difference === null ? '-' : `${difference >= 0 ? '+' : ''}${difference.toFixed(1)}`,
-        ),
-      );
-      tbody.append(tr);
+    if (row) {
+      hoverPanel.append(sectionHead('Performance', `percentile vs ${setCode}`));
+      for (const line of PERFORMANCE) {
+        hoverPanel.append(statBar(line.label, statValue(line.metric, row.values[line.metric]), pcts?.[line.metric] ?? null, row.lowSample));
+      }
+      hoverPanel.append(sectionHead('Draft demand', 'how early players take it'));
+      for (const line of DEMAND) {
+        hoverPanel.append(statBar(line.label, statValue(line.metric, row.values[line.metric]), pcts?.[line.metric] ?? null, false));
+      }
+    } else {
+      hoverPanel.append(element('p', 'hover-note', '17Lands has no stats for this card.'));
     }
-    table.append(thead, tbody);
-    hoverPanel.append(table);
 
-    const tiles = element('div', 'hover-tiles');
-    const tileMetrics: MetricId[] = ['iwd', 'games', 'ata', 'alsa'];
-    for (const metric of tileMetrics) {
-      const tile = element('div', 'hover-tile');
-      tile.append(
-        element('span', 'tile-value', row ? formatMetric(metric, row.values[metric]) : '-'),
-        element('span', 'tile-label', METRICS[metric].name),
-      );
-      tiles.append(tile);
+    // The card notes (the site's CardNotes): what it does, the colors it likes, then the data lines.
+    const facts = coach?.facts.get(name);
+    const roles = coach?.roles.get(name) ?? [];
+    const notes = element('dl', 'hover-notes');
+    const noteRow = (label: string, body: HTMLElement | string) => {
+      const div = element('div');
+      const dd = element('dd');
+      dd.append(body);
+      div.append(element('dt', undefined, label), dd);
+      notes.append(div);
+    };
+    if (roles.length) {
+      const chips = element('span', 'chips');
+      for (const r of roles) chips.append(element('span', 'role', ROLE_LABELS[r.role]));
+      noteRow('Does', chips);
     }
-    hoverPanel.append(tiles);
-    if (row?.lowSample) {
-      hoverPanel.append(
-        element('p', 'hover-note', `Fewer than ${settings.minGames} games in hand, so no grade.`),
-      );
+    const pairs = facts?.pairs ?? [];
+    if (pairs.length) {
+      const total = pairs.reduce((sum, p) => sum + p.games, 0) || 1;
+      const spread = pairs.length > 1 ? pairs[0].rel - pairs[pairs.length - 1].rel : 0;
+      const chips = element('span', 'chips');
+      pairs.forEach((p, i) => {
+        const tone = p.rel >= 1 ? 'good' : p.rel <= -1 ? 'bad' : 'even';
+        const chip = element('span', `cp ${tone}${i === 0 && spread >= 3 ? ' best' : ''}`);
+        chip.title = `${pairName(p.pair)}: ${p.gih.toFixed(1)}% when in hand`;
+        chip.append(pairPips(p.pair), element('b', undefined, `${p.rel >= 0 ? '+' : ''}${p.rel.toFixed(1)}`), element('small', undefined, `${Math.round((100 * p.games) / total)}%`));
+        chips.append(chip);
+      });
+      chips.append(element('span', 'key', 'vs. other cards in that pair · share of its games'));
+      noteRow('Colors', chips);
     }
+    if (facts) {
+      // Left out, as on the site: Keywords (printed on the card), Sample (said above), and Decks when Colors shows it pair by pair.
+      for (const l of factLines(facts, setCode).filter((l) => l.label !== 'Keywords' && l.label !== 'Sample' && !(l.label === 'Decks' && pairs.length > 1))) {
+        noteRow(l.label, l.text);
+      }
+    }
+    if (notes.childElementCount) hoverPanel.append(notes);
+
     if (settings.coachHint && coachTop.has(hovered.id)) {
       hoverPanel.append(
         element(
