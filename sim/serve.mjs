@@ -12,7 +12,7 @@ const ROOT = path.resolve(import.meta.dirname, '..');
 const PORT = Number(process.env.PORT ?? 5199);
 const FOLDERS = new Set(['sim', 'core', 'coach', 'overlay', 'card-data', 'sim-data']);
 // The coach hint's files: the web trainer's, from the site (as the real app does).
-const COACH_SITE = 'https://23spells.pages.dev/sets';
+const COACH_SITE = 'https://24spells.com/sets';
 const TYPES = {
   '.html': 'text/html; charset=utf-8',
   '.css': 'text/css; charset=utf-8',
