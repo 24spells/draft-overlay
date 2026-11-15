@@ -69,7 +69,16 @@ export type ArenaGameRecord = {
   stuck: number[];
   /** Your Arena Limited rank when the game started (from the last rank Arena logged), for 24spells. */
   rank?: ArenaRank | null;
+  /** The run this game belongs to, as Arena last reported it: record, and whether it is over. */
+  run?: ArenaRun | null;
 };
+
+/**
+ * A run's state from Arena's course (2026-11-15, for 24spells trophies): done once Arena moves the
+ * course to ClaimPrize or Complete. A run stops on the game that hits a cap, so a done run whose last
+ * game was a win reached its event's win cap, whatever the cap is (7, 4, 3...).
+ */
+export type ArenaRun = { wins: number; losses: number; done: boolean; module: string | null };
 
 /** Arena's Limited rank: class (Bronze ... Mythic), tier 1-4, Mythic percentile or place, season. */
 export type ArenaRank = { cls: string; level: number | null; pct: number | null; place: number | null; season: number | null };
@@ -129,7 +138,7 @@ export function readArenaLog(text: string): ArenaRecords {
   const basics: Record<string, string> = {};
   /** Latest course per event name, and each course's Arena record. */
   const courseOf = new Map<string, string>();
-  const courseRecord = new Map<string, { wins: number | null; losses: number | null }>();
+  const courseRecord = new Map<string, { wins: number; losses: number; module: string | null }>();
   const eventOfMatch = new Map<string, string>();
   let now: number | null = null;
   let draft: ArenaDraftRecord | null = null;
@@ -207,8 +216,9 @@ export function readArenaLog(text: string): ArenaRecords {
         const body = next > 0 ? tail.slice(0, next) : tail;
         const w = /"CurrentWins":(\d+)/.exec(body);
         const l = /"CurrentLosses":(\d+)/.exec(body);
-        if (w || l) // Arena leaves out a zero count.
-        courseRecord.set(m[1], { wins: w ? Number(w[1]) : 0, losses: l ? Number(l[1]) : 0 });
+        const mod = /"CurrentModule":"(\w+)"/.exec(body);
+        if (w || l || mod) // Arena leaves out a zero count.
+        courseRecord.set(m[1], { wins: w ? Number(w[1]) : 0, losses: l ? Number(l[1]) : 0, module: mod?.[1] ?? courseRecord.get(m[1])?.module ?? null });
       }
     }
 
@@ -393,6 +403,10 @@ export function readArenaLog(text: string): ArenaRecords {
       d.wins = r.wins;
       d.losses = r.losses;
     }
+  }
+  for (const g of games.values()) {
+    const r = g.course ? courseRecord.get(g.course) : undefined;
+    if (r) g.run = { wins: r.wins, losses: r.losses, module: r.module, done: r.module === 'ClaimPrize' || r.module === 'Complete' };
   }
   return { drafts: [...drafts.values()], sealed: [...sealed.values()], games: [...games.values()], basics };
 }
