@@ -814,6 +814,7 @@ async function startClientIfNeeded() {
 
 function arenaOpened() {
   arenaRunning = true;
+  clearTimeout(autoInstallTimer);
   setStatus('Running');
   void refreshInBackground('Arena opened');
   void startClientIfNeeded();
@@ -833,6 +834,7 @@ function arenaClosed() {
   foreground = null;
   updateVisibility();
   arena?.soon();
+  maybeAutoInstall();
 }
 
 async function pollArena() {
@@ -1069,8 +1071,22 @@ ipcMain.handle('setup:open', (event, which) => {
 // ---------- Updates ----------
 // App updates: electron-updater reads the release feed baked in at build time (app-update.yml, from
 // scripts/release.mjs). A build without one (npm run dist) simply never checks. Downloads in the
-// background; installs when the app quits, or now from the tray.
+// background; installs when the app quits, now from the tray, or on its own once Arena has been
+// closed for a few minutes (2026-11-15: an overlay left running for days never installed 0.3.3 or
+// 0.3.4, so its games had no replays).
 let updateReady = null;
+const AUTO_INSTALL_AFTER_MS = 3 * 60 * 1000;
+let autoInstallTimer = null;
+/** An update is waiting and Arena is closed: install it after a quiet spell (uploads finish first). */
+function maybeAutoInstall() {
+  clearTimeout(autoInstallTimer);
+  if (!updateReady || arenaRunning) return;
+  autoInstallTimer = setTimeout(async () => {
+    if (!updateReady || arenaRunning || drafting() || (await isRunning(ARENA_IMAGE))) return;
+    logData(`update: installing ${updateReady} on its own (Arena closed)`);
+    installUpdate();
+  }, AUTO_INSTALL_AFTER_MS);
+}
 let needsUpdate = null;
 const UPDATE_EVERY_MS = 6 * 60 * 60 * 1000;
 
@@ -1111,10 +1127,11 @@ function startUpdater() {
     logData(`update: ${info.version} ready`);
     refreshTray();
     if (Notification.isSupported()) {
-      const note = new Notification({ title: 'Draft Overlay update ready', body: `Version ${info.version} installs when the overlay restarts. Click to restart now.` });
+      const note = new Notification({ title: 'Draft Overlay update ready', body: `Version ${info.version} installs on its own while Arena is closed. Click to restart now.` });
       note.on('click', () => installUpdate());
       note.show();
     }
+    maybeAutoInstall();
   });
   const check = () => {
     if (drafting()) return; // never mid-draft
