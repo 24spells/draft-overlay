@@ -204,6 +204,8 @@ function refreshTray() {
         click: (item) => applyStartWithWindows(item.checked),
       },
       { label: 'Setup and settings...', click: () => openSetup() },
+      // The full guide (what you see, settings, troubleshooting) lives on the site, one click away.
+      { label: 'How to use it...', click: () => void shell.openExternal(`${SITE}/#overlay`) },
       { type: 'separator' },
       ...arenaMenu(),
       { type: 'separator' },
