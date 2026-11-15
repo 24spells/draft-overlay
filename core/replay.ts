@@ -1,62 +1,80 @@
-// Full game replays (Ken 2026-11-15: "a full fledged action by action viewer where you can play back
-// your game to study as if you were there again", the first step toward chess.com-style review).
+// Full game replays (Ken 2026-11-15: "a full fledged action by action viewer ... full richness of
+// playback to recreate the whole thing perfectly to study"; the first step toward chess.com-style
+// review, no scoring yet).
 //
 // A separate pass over Player.log (arena-records.ts keeps its own simpler per-turn summary). Arena's
-// game engine sends the game as a stream of state messages: full or changed objects (cards, tokens,
-// abilities), zones, players' life, the turn and step, and annotations for everything that happened
-// (a card moved and why, damage, life, targets, counters, tokens). This keeps the board up to date
-// message by message and saves a FRAME whenever something happened or the step changed: the board,
-// your hand, both graveyards and exiles, the stack, life, library sizes, and what happened in words
-// (as structured events the site turns into sentences).
+// game engine sends the game as a stream of state messages: changed objects (cards, tokens,
+// abilities), zones, life, the turn and step, and annotations for everything that happened (a card
+// moved and why, damage, life, targets, counters, tokens, abilities). This keeps the board up to
+// date message by message and saves a FRAME whenever something happened or the step changed.
 //
-// What it cannot show: the opponent's hand (only how many cards) and library order. Arena hides them.
-// Also kept per frame when Arena asks you to act: the cards you could cast or play at that moment
-// (for the decision review later; not shown yet).
+// Version 2: every card is named by its INSTANCE (the exact copy on the table), and every event says
+// which instances: the card that moved and the id it had before (a card gets a new id each time it
+// changes zone), the zones it moved between, the source and target of damage, targets, attacks and
+// blocks. That is what lets the viewer fly a card from your hand to the stack to the battlefield,
+// draw arrows from a spell to its target, and so on. Hands, graveyards and exile carry instances too;
+// the opponent's hand is instances with no card (Arena hides them).
 //
-// Pure: log text in, replays out. Like the rest of the overlay: card ids and game events only, never
-// player names or account ids.
+// What it cannot show: the opponent's hand contents and library order. Also kept: the cards you could
+// cast or play whenever Arena asked you to act (for the decision review later; not shown yet).
+//
+// Pure: log text in, replays out. Card ids and game events only, never player names or account ids.
 
-export const REPLAY_VERSION = 1;
+export const REPLAY_VERSION = 2;
 
-/** One object on the board or stack. c: 0 yours, 1 the opponent's. f: flags (FLAG_*). */
-export type RObj = { i: number; g: number; c: 0 | 1; f?: number; p?: number; t?: number; d?: number; k?: number; at?: number; bl?: number[]; src?: number };
+/** One object on the board or stack. c: 0 yours, 1 the opponent's. f: flags (FLAG). */
+export type RObj = { i: number; g: number; c: 0 | 1; f?: number; p?: number; t?: number; d?: number; k?: number; at?: number; bl?: number[]; src?: number; si?: number };
 export const FLAG = { tapped: 1, attacking: 2, blocking: 4, token: 8, sick: 16, ability: 32, land: 64, creature: 128 } as const;
+/** A card in a hand, graveyard or exile: [instance, card id]. */
+export type RCard = [number, number];
+/** A target: an instance, or "p0" / "p1" for a player (you / the opponent). */
+export type RTarget = number | 'p0' | 'p1';
 
-/** What happened. w: 0 you, 1 the opponent. g: the card (grpId). to: a card, or "p0"/"p1" for a player. */
+/**
+ * What happened. w: 0 you, 1 the opponent. g: the card (grpId). i: the instance it concerns; fi: its
+ * instance before it moved; fz / tz: from and to zone. si / ti: source and target instances.
+ * to: the target's card id (or "p0"/"p1"), for the words.
+ */
 export type REvent = {
   k:
-    | 'land' | 'cast' | 'draw' | 'dies' | 'destroyed' | 'sacrificed' | 'discarded' | 'exiled' | 'milled' | 'surveiled'
-    | 'countered' | 'returned' | 'put' | 'moved' | 'damage' | 'life' | 'target' | 'token' | 'counter' | 'attack'
-    | 'block' | 'mulligan' | 'result';
+    | 'land' | 'cast' | 'resolve' | 'draw' | 'dies' | 'destroyed' | 'sacrificed' | 'discarded' | 'exiled' | 'milled'
+    | 'surveiled' | 'countered' | 'returned' | 'put' | 'moved' | 'damage' | 'life' | 'target' | 'token' | 'counter'
+    | 'ability' | 'attack' | 'block' | 'mulligan' | 'result';
   w?: 0 | 1;
   g?: number;
   n?: number;
   to?: number | string;
   z?: string;
   r?: string;
+  i?: number;
+  fi?: number;
+  fz?: string;
+  tz?: string;
+  si?: number;
+  ti?: RTarget;
 };
 
 export type RFrame = {
   /** Turn number and whose turn (0 yours, 1 the opponent's). */
   n: number;
   a: 0 | 1;
-  /** Step, short: Upkeep, Draw, Main1, BeginCombat, DeclareAttack, DeclareBlock, Damage, EndCombat, Main2, End, Cleanup. */
+  /** Step: Untap, Upkeep, Draw, Main1, BeginCombat, DeclareAttack, DeclareBlock, FirstStrike, Damage, EndCombat, Main2, End, Cleanup. */
   s: string;
   /** Life: [you, opponent]. */
   l: [number, number];
   /** Battlefield, in Arena's order. */
   bf: RObj[];
-  /** Your hand (card ids), the opponent's hand size. */
-  h: number[];
-  oh: number;
+  /** Your hand; the opponent's hand (instances only). */
+  h: RCard[];
+  oh: number[];
   /** Graveyards and exiles: [yours, theirs], oldest first. */
-  gy: [number[], number[]];
-  ex: [number[], number[]];
+  gy: [RCard[], RCard[]];
+  ex: [RCard[], RCard[]];
   /** The stack, top first. */
   sk: RObj[];
   /** Library sizes: [yours, theirs]. */
   lib: [number, number];
-  /** What happened since the last frame. */
+  /** What happened since the last frame, in order. */
   e: REvent[];
   /** When Arena asked you to act here: the cards you could cast or play. */
   can?: number[];
@@ -71,11 +89,12 @@ const detail = (a: Obj, key: string): (string | number)[] => {
   return d ? (d.valueString ?? d.valueInt32 ?? []) : [];
 };
 const STEP: Record<string, string> = {
-  Step_Upkeep: 'Upkeep', Step_Draw: 'Draw', Step_BeginCombat: 'BeginCombat', Step_DeclareAttack: 'DeclareAttack',
+  Step_Untap: 'Untap', Step_Upkeep: 'Upkeep', Step_Draw: 'Draw', Step_BeginCombat: 'BeginCombat', Step_DeclareAttack: 'DeclareAttack',
   Step_DeclareBlock: 'DeclareBlock', Step_CombatDamage: 'Damage', Step_FirstStrikeDamage: 'FirstStrike', Step_EndCombat: 'EndCombat',
   Step_End: 'End', Step_Cleanup: 'Cleanup',
 };
 const PHASE: Record<string, string> = { Phase_Main1: 'Main1', Phase_Main2: 'Main2', Phase_Beginning: 'Upkeep', Phase_Combat: 'BeginCombat', Phase_Ending: 'End' };
+const ZONE = (t: string | undefined) => (t ?? '').replace('ZoneType_', '');
 
 /** Every game's replay in the log, keyed like the game records ("<matchId>-<gameNumber>"). */
 export function readReplays(text: string): Map<string, Replay> {
@@ -93,6 +112,7 @@ export function readReplays(text: string): Map<string, Replay> {
   let pendingCan: number[] | null = null;
 
   const side = (s: number | undefined | null): 0 | 1 => (s === seat ? 0 : 1);
+  const oppSeat = () => (seat === 1 ? 2 : 1);
   const zoneOf = (type: string, owner: number | null) => [...zones.values()].find((z) => z.type === type && (owner === null || z.ownerSeatId === owner));
   const idsIn = (z: Obj | undefined): number[] => (z?.objectInstanceIds ?? []) as number[];
 
@@ -120,27 +140,29 @@ export function readReplays(text: string): Map<string, Replay> {
     if (k) r.k = k;
     if (o.attackInfo?.targetId && f & FLAG.attacking) r.at = o.attackInfo.targetId;
     if (o.blockInfo?.attackerIds?.length && f & FLAG.blocking) r.bl = o.blockInfo.attackerIds;
-    if (o.type === 'GameObjectType_Ability') r.src = o.objectSourceGrpId ?? 0;
+    if (o.type === 'GameObjectType_Ability') {
+      r.src = o.objectSourceGrpId ?? 0;
+      if (o.parentId) r.si = o.parentId;
+    }
     return r;
   };
-  const grpsIn = (z: Obj | undefined) => idsIn(z).map((id) => objects.get(id)?.grpId).filter((g): g is number => typeof g === 'number' && g > 0);
+  const cardsIn = (z: Obj | undefined): RCard[] =>
+    idsIn(z).map((id): RCard => [id, objects.get(id)?.grpId ?? 0]).filter(([, g]) => g > 0);
 
   function frame(events: REvent[]) {
     if (!rep) return;
     const bf = idsIn(zoneOf('ZoneType_Battlefield', null)).map(robj).filter((x): x is RObj => !!x);
     const stack = idsIn(zoneOf('ZoneType_Stack', null)).map(robj).filter((x): x is RObj => !!x);
-    const exile = zoneOf('ZoneType_Exile', null);
-    const exIds = idsIn(exile);
+    const exIds = idsIn(zoneOf('ZoneType_Exile', null));
+    const exOf = (mine: boolean): RCard[] =>
+      exIds.filter((id) => objects.has(id) && (objects.get(id)!.ownerSeatId === seat) === mine).map((id): RCard => [id, objects.get(id)!.grpId ?? 0]).filter(([, g]) => g > 0);
     const f: RFrame = {
       n: turn.n, a: turn.a, s: turn.s, l: [...life],
-      bf, h: grpsIn(zoneOf('ZoneType_Hand', seat)), oh: idsIn(zoneOf('ZoneType_Hand', seat === 1 ? 2 : 1)).length,
-      gy: [grpsIn(zoneOf('ZoneType_Graveyard', seat)), grpsIn(zoneOf('ZoneType_Graveyard', seat === 1 ? 2 : 1))],
-      ex: [
-        exIds.filter((id) => objects.get(id)?.ownerSeatId === seat).map((id) => objects.get(id)?.grpId ?? 0).filter(Boolean),
-        exIds.filter((id) => objects.get(id) && objects.get(id)!.ownerSeatId !== seat).map((id) => objects.get(id)?.grpId ?? 0).filter(Boolean),
-      ],
+      bf, h: cardsIn(zoneOf('ZoneType_Hand', seat)), oh: idsIn(zoneOf('ZoneType_Hand', oppSeat())),
+      gy: [cardsIn(zoneOf('ZoneType_Graveyard', seat)), cardsIn(zoneOf('ZoneType_Graveyard', oppSeat()))],
+      ex: [exOf(true), exOf(false)],
       sk: stack,
-      lib: [idsIn(zoneOf('ZoneType_Library', seat)).length, idsIn(zoneOf('ZoneType_Library', seat === 1 ? 2 : 1)).length],
+      lib: [idsIn(zoneOf('ZoneType_Library', seat)).length, idsIn(zoneOf('ZoneType_Library', oppSeat())).length],
       e: events,
     };
     // Skip a frame that changes nothing (same board, nothing happened).
@@ -178,7 +200,7 @@ export function readReplays(text: string): Map<string, Replay> {
         continue;
       }
       if (m.type === 'GREMessageType_MulliganReq' && rep && (m.systemSeatIds ?? []).includes(seat)) {
-        frame([{ k: 'mulligan', w: 0, n: grpsIn(zoneOf('ZoneType_Hand', seat)).length }]);
+        frame([{ k: 'mulligan', w: 0, n: cardsIn(zoneOf('ZoneType_Hand', seat)).length }]);
         continue;
       }
       const gs = m.gameStateMessage as Obj | undefined;
@@ -207,6 +229,9 @@ export function readReplays(text: string): Map<string, Replay> {
         objects = new Map();
         zones = new Map();
       }
+      // Before this message changes anything: where each object was (for "from" zones).
+      const zoneBefore = new Map<number, string>();
+      for (const z of zones.values()) for (const id of idsIn(z)) zoneBefore.set(id, ZONE(z.type));
       for (const z of (gs.zones ?? []) as Obj[]) zones.set(z.zoneId, z);
       for (const o of (gs.gameObjects ?? []) as Obj[]) objects.set(o.instanceId, o);
       for (const id of (gs.diffDeletedInstanceIds ?? []) as number[]) objects.delete(id);
@@ -223,67 +248,94 @@ export function readReplays(text: string): Map<string, Replay> {
         turn = { n, a, s };
       }
 
-      // What happened, from Arena's annotations.
-      const events: REvent[] = [];
-      const grpOf = (id: number) => objects.get(id)?.grpId ?? 0;
-      const whoOf = (id: number): 0 | 1 => side(objects.get(id)?.controllerSeatId ?? objects.get(id)?.ownerSeatId);
-      const target = (id: number): number | string => (id === 1 || id === 2 ? `p${side(id)}` : grpOf(id));
-      for (const a of (gs.annotations ?? []) as Obj[]) {
-        const types: string[] = a.type ?? [];
-        if (types.includes('AnnotationType_ObjectIdChanged')) {
-          const from = num(detail(a, 'orig_id')[0]);
-          const to = num(detail(a, 'new_id')[0]);
-          if (from !== null && to !== null && counters.has(from)) {
-            counters.set(to, counters.get(from)!);
-            counters.delete(from);
-          }
+      const annotations = (gs.annotations ?? []) as Obj[];
+      // A card gets a new instance id each time it changes zone: new id -> the id it had before.
+      const prev = new Map<number, number>();
+      for (const a of annotations) {
+        if (!(a.type ?? []).includes('AnnotationType_ObjectIdChanged')) continue;
+        const from = num(detail(a, 'orig_id')[0]);
+        const to = num(detail(a, 'new_id')[0]);
+        if (from === null || to === null) continue;
+        prev.set(to, from);
+        if (counters.has(from)) {
+          counters.set(to, counters.get(from)!);
+          counters.delete(from);
         }
+      }
+
+      // What happened, from Arena's annotations, in Arena's order.
+      const events: REvent[] = [];
+      const grpOf = (id: number) => {
+        const o = objects.get(id);
+        return o?.type === 'GameObjectType_Ability' ? (o.objectSourceGrpId ?? 0) : (o?.grpId ?? 0);
+      };
+      const whoOf = (id: number): 0 | 1 => side(objects.get(id)?.controllerSeatId ?? objects.get(id)?.ownerSeatId);
+      const tgt = (id: number): RTarget => (id === 1 || id === 2 ? (`p${side(id)}` as 'p0' | 'p1') : id);
+      const words = (id: number): number | string => (id === 1 || id === 2 ? `p${side(id)}` : grpOf(id));
+      for (const a of annotations) {
+        const types: string[] = a.type ?? [];
         if (types.includes('AnnotationType_ZoneTransfer')) {
           const cat = String(detail(a, 'category')[0] ?? '');
-          const dest = zones.get(Number(detail(a, 'zone_dest')[0]))?.type ?? '';
+          const tz = ZONE(zones.get(Number(detail(a, 'zone_dest')[0]))?.type);
+          const fzNum = Number(detail(a, 'zone_src')[0]);
           for (const id of (a.affectedIds ?? []) as number[]) {
             const o = objects.get(id);
-            if (!o || o.type === 'GameObjectType_Ability') continue;
+            const fi = prev.get(id) ?? id;
+            const fz = ZONE(zones.get(fzNum)?.type) || zoneBefore.get(fi) || '';
+            const base = { i: id, fi, fz, tz };
+            // The opponent's hidden cards: only draws are worth showing (a card back moves to their hand).
+            if (!o) {
+              if (cat === 'Draw') events.push({ k: 'draw', w: 1, ...base });
+              continue;
+            }
+            if (o.type === 'GameObjectType_Ability') continue;
             const w = side(o.ownerSeatId);
             const g = o.grpId ?? 0;
-            if (cat === 'Resolve') continue;
-            if (cat === 'PlayLand') events.push({ k: 'land', w: whoOf(id), g });
-            else if (cat === 'CastSpell') events.push({ k: 'cast', w: whoOf(id), g });
-            else if (cat === 'Draw') events.push({ k: 'draw', w, g: w === 0 ? g : 0 });
-            else if (cat.startsWith('SBA_')) events.push({ k: 'dies', w, g, r: cat.replace('SBA_', '') });
-            else if (cat === 'Destroy') events.push({ k: 'destroyed', w, g });
-            else if (cat === 'Sacrifice') events.push({ k: 'sacrificed', w, g });
-            else if (cat === 'Discard') events.push({ k: 'discarded', w, g });
-            else if (cat === 'Exile') events.push({ k: 'exiled', w, g });
-            else if (cat === 'Mill') events.push({ k: 'milled', w, g });
-            else if (cat === 'Surveil') events.push({ k: 'surveiled', w, g, z: dest.replace('ZoneType_', '') });
-            else if (cat === 'Countered') events.push({ k: 'countered', w, g });
-            else if (cat === 'Return') events.push({ k: 'returned', w, g, z: dest.replace('ZoneType_', '') });
-            else if (cat === 'Put') events.push({ k: 'put', w, g, z: dest.replace('ZoneType_', '') });
-            else events.push({ k: 'moved', w, g, z: dest.replace('ZoneType_', ''), r: cat });
+            if (cat === 'Resolve') events.push({ k: 'resolve', w: whoOf(id), g, ...base });
+            else if (cat === 'PlayLand') events.push({ k: 'land', w: whoOf(id), g, ...base });
+            else if (cat === 'CastSpell') events.push({ k: 'cast', w: whoOf(id), g, ...base });
+            else if (cat === 'Draw') events.push({ k: 'draw', w, g: w === 0 ? g : 0, ...base });
+            else if (cat.startsWith('SBA_')) events.push({ k: 'dies', w, g, r: cat.replace('SBA_', ''), ...base });
+            else if (cat === 'Destroy') events.push({ k: 'destroyed', w, g, ...base });
+            else if (cat === 'Sacrifice') events.push({ k: 'sacrificed', w, g, ...base });
+            else if (cat === 'Discard') events.push({ k: 'discarded', w, g, ...base });
+            else if (cat === 'Exile') events.push({ k: 'exiled', w, g, ...base });
+            else if (cat === 'Mill') events.push({ k: 'milled', w, g, ...base });
+            else if (cat === 'Surveil') events.push({ k: 'surveiled', w, g, z: tz, ...base });
+            else if (cat === 'Countered') events.push({ k: 'countered', w, g, ...base });
+            else if (cat === 'Return') events.push({ k: 'returned', w, g, z: tz, ...base });
+            else if (cat === 'Put') events.push({ k: 'put', w, g, z: tz, ...base });
+            else events.push({ k: 'moved', w, g, z: tz, r: cat, ...base });
+          }
+        }
+        if (types.includes('AnnotationType_AbilityInstanceCreated') && a.affectorId) {
+          for (const id of (a.affectedIds ?? []) as number[]) {
+            const ab = objects.get(id);
+            if (ab?.type !== 'GameObjectType_Ability') continue;
+            // Only abilities that use the stack (triggers and activations), not mana abilities.
+            if (zones.get(ab.zoneId)?.type !== 'ZoneType_Stack') continue;
+            events.push({ k: 'ability', w: whoOf(a.affectorId), g: ab.objectSourceGrpId ?? grpOf(a.affectorId), i: id, si: a.affectorId });
           }
         }
         if (types.includes('AnnotationType_DamageDealt')) {
           const n = num(detail(a, 'damage')[0]) ?? 0;
-          for (const id of (a.affectedIds ?? []) as number[]) events.push({ k: 'damage', w: whoOf(a.affectorId), g: grpOf(a.affectorId), n, to: target(id) });
+          for (const id of (a.affectedIds ?? []) as number[]) events.push({ k: 'damage', w: whoOf(a.affectorId), g: grpOf(a.affectorId), n, to: words(id), si: a.affectorId, ti: tgt(id) });
         }
         if (types.includes('AnnotationType_ModifiedLife')) {
           const n = num(detail(a, 'life')[0]) ?? 0;
-          for (const id of (a.affectedIds ?? []) as number[]) if (id === 1 || id === 2) events.push({ k: 'life', w: side(id), n });
+          for (const id of (a.affectedIds ?? []) as number[]) if (id === 1 || id === 2) events.push({ k: 'life', w: side(id), n, ti: tgt(id) });
         }
         if (types.includes('AnnotationType_TargetSpec') && a.affectorId) {
-          const src = objects.get(a.affectorId);
-          const g = src?.type === 'GameObjectType_Ability' ? (src.objectSourceGrpId ?? 0) : (src?.grpId ?? 0);
-          for (const id of (a.affectedIds ?? []) as number[]) events.push({ k: 'target', w: whoOf(a.affectorId), g, to: target(id) });
+          for (const id of (a.affectedIds ?? []) as number[]) events.push({ k: 'target', w: whoOf(a.affectorId), g: grpOf(a.affectorId), to: words(id), si: a.affectorId, ti: tgt(id) });
         }
         if (types.includes('AnnotationType_TokenCreated')) {
-          for (const id of (a.affectedIds ?? []) as number[]) events.push({ k: 'token', w: whoOf(id), g: grpOf(id) });
+          for (const id of (a.affectedIds ?? []) as number[]) events.push({ k: 'token', w: whoOf(id), g: grpOf(id), i: id, tz: 'Battlefield' });
         }
         if (types.includes('AnnotationType_CounterAdded') || types.includes('AnnotationType_CounterRemoved')) {
           const n = (num(detail(a, 'transaction_amount')[0]) ?? 1) * (types.includes('AnnotationType_CounterRemoved') ? -1 : 1);
           for (const id of (a.affectedIds ?? []) as number[]) {
             counters.set(id, Math.max(0, (counters.get(id) ?? 0) + n));
-            if (n > 0) events.push({ k: 'counter', w: whoOf(id), g: grpOf(id), n });
+            if (n > 0) events.push({ k: 'counter', w: whoOf(id), g: grpOf(id), n, i: id });
           }
         }
       }
@@ -294,11 +346,15 @@ export function readReplays(text: string): Map<string, Replay> {
         if (o.attackState === 'AttackState_Attacking' || o.attackState === 'AttackState_Declared') nowAttacking.add(id);
         if (o.blockState === 'BlockState_Blocking' || o.blockState === 'BlockState_Declared') nowBlocking.add(id);
       }
-      for (const id of nowAttacking) if (!attacking.has(id)) events.push({ k: 'attack', w: whoOf(id), g: grpOf(id), to: target(objects.get(id)?.attackInfo?.targetId ?? 0) });
+      for (const id of nowAttacking) {
+        if (attacking.has(id)) continue;
+        const t = objects.get(id)?.attackInfo?.targetId ?? 0;
+        events.push({ k: 'attack', w: whoOf(id), g: grpOf(id), to: words(t), i: id, ti: tgt(t) });
+      }
       for (const id of nowBlocking) {
         if (blocking.has(id)) continue;
-        const atk = objects.get(id)?.blockInfo?.attackerIds?.[0];
-        events.push({ k: 'block', w: whoOf(id), g: grpOf(id), to: atk ? grpOf(atk) : 0 });
+        const atk = objects.get(id)?.blockInfo?.attackerIds?.[0] ?? 0;
+        events.push({ k: 'block', w: whoOf(id), g: grpOf(id), to: atk ? grpOf(atk) : 0, i: id, ti: atk });
       }
       attacking = nowAttacking;
       blocking = nowBlocking;
@@ -327,7 +383,8 @@ export function replayIds(r: Replay): number[] {
       if (o.g) ids.add(o.g);
       if (o.src) ids.add(o.src);
     }
-    for (const g of [...f.h, ...f.gy[0], ...f.gy[1], ...f.ex[0], ...f.ex[1], ...(f.can ?? [])]) ids.add(g);
+    for (const [, g] of [...f.h, ...f.gy[0], ...f.gy[1], ...f.ex[0], ...f.ex[1]]) ids.add(g);
+    for (const g of f.can ?? []) ids.add(g);
     for (const e of f.e) {
       if (e.g) ids.add(e.g);
       if (typeof e.to === 'number' && e.to) ids.add(e.to);
