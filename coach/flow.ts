@@ -134,7 +134,7 @@ export function feederColors(draft: DraftState, from: 'right' | 'left', topColor
 }
 
 /**
- * The wheel (2026-11-13): the pack you see 8 picks later is the pack you saw
+ * The wheel (Ken 2026-11-13): the pack you see 8 picks later is the pack you saw
  * before, minus your pick and exactly one card taken by each other seat. So the
  * missing good cards are hard evidence of what the table drafts. Per color: the
  * share of its good material (above-average cards, gold split) the table took.

@@ -79,6 +79,44 @@ export type SplashFile = {
   cards: Record<string, { all: number[]; pairs: Record<string, number[]> }>;
 };
 
+/**
+ * Sealed only (Ken 2026-11-14: keep draft and sealed knowledge separate). Measured on 17Lands
+ * FRA Sealed games alone (research/draft/sealed-fra-self-grade-2026-11-14.md, MTG AI folder).
+ */
+export const SEALED_TUNING = {
+  /**
+   * Bomb credit: GIH points added to an A- or better card when building and scoring sealed decks.
+   * Set on all 30 sets with 17Lands Sealed data (2026-11-15, scripts/sealed-lab.ts, half the runs
+   * held out per set): +5 made the deck score track wins better than no credit in 27 of 30 sets,
+   * +10 in 22, +15 in 18, and the bigger credits dulled the build-gap signal (worse in 28/30 at +10).
+   * (FRA alone first suggested +10: its bombs were unusually strong; across sets an extra bomb adds
+   * nothing beyond its own card quality.)
+   */
+  bombCredit: 5,
+};
+
+export const DRAFT_TUNING = {
+  /**
+   * Bomb credit for the draft coach (2026-11-14, Ken approved testing): GIH points added to an A- or
+   * better card (draft grades). Draft decks with quality held fixed: a bomb is worth +1.1 pts beyond
+   * its own quality, 34/34 sets (scripts/sealed-laws.ts PremierDraft). Held out: build advice +2 made
+   * the deck score track wins better in 33/34 sets (scripts/coach-knobs.ts); picks: +3 changed 0.5% of
+   * picks, 62%+ drafters took the credited pick 41% vs 25%, agreement up in 6/10 sets, down in 0, wins
+   * flat (coach-color-lab.ts BOMB_CREDIT). +2: the smaller size both tests support.
+   */
+  bombCredit: 2,
+};
+
+/** The sealed coach: bombs count SEALED_TUNING.bombCredit more, in their main colors and as a splash. */
+export function withBombCredit(model: CoachModel, bomb: boolean[], credit = SEALED_TUNING.bombCredit): CoachModel {
+  if (!credit) return model;
+  return {
+    ...model,
+    gih: model.gih.map((g, i) => g + (bomb[i] ? credit : 0)),
+    splashQ: model.splashQ.map((row) => row.map((q, i) => q + (bomb[i] ? credit : 0))),
+  };
+}
+
 export const TUNING = {
   /** Value per point of synergy with cards already in your pool (0 = off; tested in validate-coach). */
   synergyWeight: 0,
@@ -90,7 +128,7 @@ export const TUNING = {
   offColor: 0.04,
   /**
    * What is worth splashing, from 17Lands data per color pair (<SET>-splash.json,
-   * scripts/build-splash.ts; 2026-11-13: "certain synergies want to splash certain
+   * scripts/build-splash.ts; Ken 2026-11-13: "certain synergies want to splash certain
    * cards", data driven). A card is a splash candidate for a pair when, splashed in that
    * pair's decks, drawing it beat drawing the pair's own cards by at least splashWorth
    * win-rate points, AND strong players splashed it at least splashRate of the time they
@@ -337,7 +375,7 @@ export function splashRateIn(model: CoachModel, ix: number, pair: string): numbe
 
 export type PairOdds = { pair: string; p: number }[];
 
-// ---------- Deck shapes (2026-11-12: splashes and 3+ color decks are real options) ----------
+// ---------- Deck shapes (Ken 2026-11-12: splashes and 3+ color decks are real options) ----------
 //
 // The coach no longer assumes every deck is one two-color pair. It weighs the
 // shapes real decks end up in: a pair, a pair plus a splash (at most 3 cards
@@ -665,7 +703,7 @@ export function evaluatePack(
     if (roleTags.some((r) => INTERACTION.includes(r)) && expectInteraction < 9) {
       need = Math.min(TUNING.needCap, TUNING.needInteraction * (9 - expectInteraction));
       needReason = `your deck is short on interaction (${needs.interaction} so far, aiming for about 9)`;
-    // No "short on card draw" bonus (2026-11-13): across 34 sets, decks with more card
+    // No "short on card draw" bonus (Ken 2026-11-13): across 34 sets, decks with more card
     // draw won LESS in 27 (research/draft/draft-science-2026-11-13.md); removing it left the
     // coach's validated accuracy unchanged. TUNING.needCardDraw is kept for experiments.
     } else if (card.mv === 2 && !/Land/.test(card.type) && expectTwo < 6) {

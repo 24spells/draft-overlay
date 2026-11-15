@@ -35,7 +35,21 @@ export type Deck = {
 export const emptyDeck = (): Deck => ({ main: [], basics: { W: 0, U: 0, B: 0, R: 0, G: 0 } });
 
 export const DECK_SIZE = 40;
-export const LAND_TARGET = 17;
+/**
+ * Lands per 40 cards: 16 in both formats (scripts/coach-knobs.ts, skill-adjusted, card quality held
+ * fixed). Sealed (2026-11-14, Ken approved): 16 beat 17 by +0.74 pts in 27/30 sets; low curves +1.2,
+ * top-heavy +0.3. Draft (2026-11-14, Ken: "whatever the bot thinks"): 16 beat 17 by +1.52 pts in 33/34
+ * sets, 884k decks; low curves +1.74, top-heavy (5+ cards at 5+ mana) +1.03 in 30/34. No curve favors
+ * 17, so no curve rule. LAND_TARGET is the fallback before a set loads; lib/set.ts sets the live one.
+ */
+export const LAND_TARGET = 16;
+let landTargetNow = LAND_TARGET;
+export function setLandTarget(n: number): void {
+  landTargetNow = n;
+}
+export function landTarget(): number {
+  return landTargetNow;
+}
 
 export const isLand = (card: Card) => card.type.includes('Land');
 export const isCreature = (card: Card) => card.type.includes('Creature');
@@ -186,18 +200,28 @@ export function deckStats(deck: Deck, pool: number[], cards: Card[]): DeckStats 
 }
 
 /**
- * Basics for 17 lands total, split by colored symbols in the deck's spells
+ * Basics for the land target (16), split by colored symbols in the deck's spells
  * (largest remainder, at least one of each color used). Nonbasic lands in the
- * deck count toward the 17.
+ * deck count toward the target.
  */
 export function autoLands(deck: Deck, pool: number[], cards: Card[]): Record<Color, number> {
   const main = deck.main.map((pos) => cards[pool[pos]]);
   const nonbasic = main.filter(isLand).length;
-  const toPlace = Math.max(0, LAND_TARGET - nonbasic);
+  const toPlace = Math.max(0, landTargetNow - nonbasic);
   const totals: Record<Color, number> = { W: 0, U: 0, B: 0, R: 0, G: 0 };
-  for (const card of main.filter((c) => !isLand(c))) {
+  const spells = main.filter((c) => !isLand(c));
+  // A hybrid symbol is paid with a color the deck already plays (2026-11-14: a {G/U} card in a
+  // Red-Green deck put an Island in), as deckMeasures counts colors; else it splits as before.
+  const played = new Set(spells.flatMap((c) => colorNeeds(c.cost).must));
+  for (const card of spells) {
     const p = pips(card.cost);
-    for (const c of COLORS) totals[c] += p[c];
+    for (const opts of colorNeeds(card.cost).either) {
+      const pay = opts.find((o) => played.has(o));
+      if (!pay) continue;
+      for (const o of opts) p[o] -= 1 / opts.length;
+      p[pay] += 1;
+    }
+    for (const c of COLORS) totals[c] += Math.max(0, p[c]);
   }
   const used = COLORS.filter((c) => totals[c] > 0);
   const out: Record<Color, number> = { W: 0, U: 0, B: 0, R: 0, G: 0 };
@@ -307,6 +331,7 @@ export const SPOTS: Record<string, { label: string; test: (c: Card) => boolean }
   creatures: { label: 'Creatures', test: (c) => spell(c) && isCreature(c) },
   interaction: { label: 'Interaction', test: (c) => (c.roles ?? []).some((r) => INTERACTION.includes(r.role)) },
   twoDrops: { label: 'Two-drops', test: (c) => spell(c) && c.mv === 2 },
+  cheap: { label: 'Spells costing 2 or less', test: (c) => spell(c) && c.mv <= 2 },
   topEnd: { label: 'Spells costing 5+', test: (c) => spell(c) && c.mv >= 5 },
   cardDraw: { label: 'Card draw', test: (c) => hasRole(c, 'card draw') },
   bombs: { label: 'Bombs', test: (c) => spell(c) && c.bomb === true },
@@ -322,6 +347,11 @@ export function spotTest(key: string): ((c: Card) => boolean) | null {
   if (key.startsWith('role:')) {
     const role = key.slice(5) as Role;
     return (c) => hasRole(c, role);
+  }
+  // Rarity: 'rarity:common' / uncommon / rare / mythic (basics are not counted).
+  if (key.startsWith('rarity:')) {
+    const r = key.slice(7);
+    return (c) => c.rarity === r && !c.type.startsWith('Basic');
   }
   return SPOTS[key]?.test ?? null;
 }

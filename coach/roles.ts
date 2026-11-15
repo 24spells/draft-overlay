@@ -57,7 +57,7 @@ const RULES: Rule[] = [
   { role: 'removal', test: /target creature (?:an opponent controls )?gets -(?:\d+|X)\/-(?:[2-9]|\d{2,}|X)\b/i },
   // Burn with a restricted target ("target black or green creature", "target creature with flying").
   { role: 'removal', test: /deals? (?:\d+|X) damage to target [^.]*?(?:creature|planeswalker)/i, unless: /you control/i },
-  // Fight and bite; "their power" too (2026-11-13: TRK Common Goal, two creatures each bite).
+  // Fight and bite; "their power" too (Ken 2026-11-13: TRK Common Goal, two creatures each bite).
   { role: 'removal', test: /\bfights?\b (?:target|another target|up to one target)|deals? damage equal to (?:its|their) power to (?:target|another target|that (?:creature|permanent))/i },
   // Tuck: the creature goes to the top or bottom of its owner's library (TRK Guidance Failure).
   { role: 'removal', test: /target creature[^.]*owner puts it (?:on|into) (?:their choice of )?the top or bottom of (?:their|its owner's) library/i },
