@@ -89,11 +89,13 @@ export function gridGeometry(
     const boxWidth = Math.min(width, (height * 16) / 9);
     const offset = (width - boxWidth) / 2;
     geometry = {
-      left: offset + 0.1746 * boxWidth,
+      // 2026-11-15, re-measured from Ken's live TRK draft (3200x1800 window, packs of 14 and 11):
+      // the card-to-card step was right, the box ~3% too wide and ~0.34% of width too far right.
+      left: offset + 0.1723 * boxWidth,
       top: 0.1612 * height,
       stepX: 0.0829 * boxWidth,
       stepY: 0.1863 * height,
-      cardWidth: 0.0722 * boxWidth,
+      cardWidth: 0.07 * boxWidth,
       cardHeight: 0.1806 * height,
     };
   } else {
