@@ -1,7 +1,7 @@
 {
   "name": "mtg-draft-overlay",
   "productName": "Draft Overlay",
-  "version": "0.2.0",
+  "version": "0.3.0",
   "private": true,
   "description": "MTG Arena draft overlay showing 17Lands public stats on each card.",
   "license": "MIT",
