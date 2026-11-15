@@ -177,6 +177,6 @@ arena-records/
 arena-logs/
 arena-sync.json
 
-# Built stats (hosted by 23spells or built locally)
+# Built stats (hosted by 24spells or built locally)
 card-data/*.Sealed.json
 card-data/raw-archive/

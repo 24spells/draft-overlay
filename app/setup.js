@@ -1,6 +1,6 @@
 // The first-run setup window (2026-11-14, plan: "a novice can figure it out"). Every step checks
 // itself every few seconds and turns green; nothing to type. Finish is always allowed: the overlay
-// works without a 23spells save, and the tray's "Setup and settings..." reopens this window.
+// works without a 24spells save, and the tray's "Setup and settings..." reopens this window.
 const $ = (id) => document.getElementById(id);
 let busy = false;
 
@@ -30,19 +30,19 @@ function render(s) {
     how.hidden = false;
   }
 
-  // 3. 23spells.
+  // 3. 24spells.
   const connect = $('connect');
   if (s.connected) {
     mark($('s-connect'), 'ok', `Connected as ${s.connected}. Your drafts and games show up in your Record.`);
     connect.hidden = true;
   } else if (s.connecting) {
-    mark($('s-connect'), 'wait', 'Finish on 23spells: sign in to your save there (or make one), and this turns green.');
+    mark($('s-connect'), 'wait', 'Finish on 24spells: sign in to your save there (or make one), and this turns green.');
     connect.hidden = false;
-    connect.textContent = 'Open 23spells again';
+    connect.textContent = 'Open 24spells again';
   } else {
     mark($('s-connect'), 'off', 'See your record, runs and game replays on any device. Free, no email.');
     connect.hidden = false;
-    connect.textContent = 'Connect to 23spells';
+    connect.textContent = 'Connect to 24spells';
   }
 
   // Your data.

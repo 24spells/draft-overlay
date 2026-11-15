@@ -1,7 +1,7 @@
 // The coach hint, same as the web trainer's (2026-11-13): outline the
 // coach's top 3 in the pack, unranked. Runs the trainer's own engine (coach/,
 // copied by scripts/sync-coach.mjs) on the trainer's own set file, flow
-// baseline and shape prices, so the overlay and 23spells agree.
+// baseline and shape prices, so the overlay and 24spells agree.
 
 import { buildDraftCards, type DraftCard } from '../coach/bot.ts';
 import { packSize, packSizeFrom, setPackSize } from '../coach/packsize.ts';

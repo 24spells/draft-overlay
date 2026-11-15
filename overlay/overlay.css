@@ -650,7 +650,7 @@
   font-size: 0.86em;
 }
 
-/* ---------- Coach hint: the coach's top 3, outlined (the 23spells trainer's look) ---------- */
+/* ---------- Coach hint: the coach's top 3, outlined (the 24spells trainer's look) ---------- */
 .coach-outline {
   position: absolute;
   border-radius: calc(var(--u) * 9);
@@ -788,7 +788,7 @@
   background: #2f7f72;
 }
 
-/* Review in 23spells (2026-11-13): send the draft to the trainer for the full review. */
+/* Review in 24spells (2026-11-13): send the draft to the trainer for the full review. */
 .review-button {
   color: #e9f6f2;
   background: #2b6f63;

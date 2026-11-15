@@ -5,7 +5,7 @@
 // 1. Bumps the version in package.json.
 // 2. Builds the installer with the release feed baked in (app-update.yml), so installed copies update
 //    themselves from GitHub Releases (electron-updater), and uploads it as a published release.
-// 3. Writes 23spells' public/overlay/latest.json: the download button's link, the version, the notes,
+// 3. Writes 24spells' public/overlay/latest.json: the download button's link, the version, the notes,
 //    and (with --min) the minimum version older overlays are asked to update to.
 // 4. Tells you to publish the site (cd draft-trainer && npm run publish) so the download page updates.
 //

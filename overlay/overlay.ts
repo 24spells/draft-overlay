@@ -45,7 +45,7 @@ type Settings = {
   showStats: boolean;
   /** The ▼ Close button. Folded leaves one small tab on screen. */
   folded: boolean;
-  /** The Coach ON/OFF button: outline the coach's top picks, like the 23spells hint. On by default. */
+  /** The Coach ON/OFF button: outline the coach's top picks, like the 24spells hint. On by default. */
   coachHint: boolean;
   /** Ranked shows 1, 2, 3 on the outlined cards; outline only is the trainer's unranked hint (your call). */
   coachStyle: 'ranked' | 'outline';
@@ -202,15 +202,15 @@ export function mountOverlay(root: HTMLElement, api: OverlayApi): void {
   const colorsRow = element('div', 'stack-row stack-info coach-colors');
   const gradeRow = element('div', 'stack-row stack-info coach-grade');
   const toast = element('div', 'pick-toast');
-  coachButton.title = "Outline the coach's top 3 picks, the same hint as on 23spells";
+  coachButton.title = "Outline the coach's top 3 picks, the same hint as on 24spells";
   const mainLabel = element('label', 'stack-row stack-select');
   const mainSelect = element('select');
   const deckLabel = element('label', 'stack-row stack-select');
   const deckSelect = element('select');
   const settingsButton = element('button', 'stack-row stack-button settings-button', 'Settings');
-  // 2026-11-13: send this draft to 23spells for the full review and deck building.
-  const reviewButton = element('button', 'stack-row stack-button review-button', 'Review in 23spells');
-  reviewButton.title = 'Open this draft on 23spells: every pick graded, then build your deck with the coach, the laws of drafting and synergy. The draft travels in the link; nothing is uploaded.';
+  // 2026-11-13: send this draft to 24spells for the full review and deck building.
+  const reviewButton = element('button', 'stack-row stack-button review-button', 'Review in 24spells');
+  reviewButton.title = 'Open this draft on 24spells: every pick graded, then build your deck with the coach, the laws of drafting and synergy. The draft travels in the link; nothing is uploaded.';
   const foldButton = element('button', 'stack-row stack-button fold-button');
   for (const button of [statsButton, coachButton, reviewButton, settingsButton, foldButton]) {
     button.type = 'button';
@@ -410,8 +410,8 @@ export function mountOverlay(root: HTMLElement, api: OverlayApi): void {
       : `${activeDeck().label}. Data: 17Lands public dataset, CC BY 4.0. Games through ${through}.`;
     if (settings.coachHint) {
       credit.textContent += coach
-        ? ` Coach's top ${settings.coachCount} ${settings.coachStyle === 'ranked' ? 'ranked' : 'outlined'} (23spells coach).`
-        : ' Coach hint: no 23spells data for this set yet.';
+        ? ` Coach's top ${settings.coachCount} ${settings.coachStyle === 'ranked' ? 'ranked' : 'outlined'} (24spells coach).`
+        : ' Coach hint: no 24spells data for this set yet.';
     }
   }
 
@@ -815,22 +815,22 @@ export function mountOverlay(root: HTMLElement, api: OverlayApi): void {
     }
   }
 
-  // Review in 23spells: every pick of this draft as trainer card indexes, in the link's #fragment.
+  // Review in 24spells: every pick of this draft as trainer card indexes, in the link's #fragment.
   reviewButton.addEventListener('click', async () => {
     if (!api.getReview || !api.openReview) return;
     reviewButton.textContent = 'Opening...';
     try {
-      // Connected to 23spells: open the newest recorded run (draft, deck and games), which
+      // Connected to 24spells: open the newest recorded run (draft, deck and games), which
       // survives Arena replacing its log at launch (2026-11-13: the button found no draft).
       const latest = api.getLatestRun ? await api.getLatestRun() : null;
-      // Sealed (2026-11-14): when your newest event is a sealed one, open its pool on 23spells to build.
+      // Sealed (2026-11-14): when your newest event is a sealed one, open its pool on 24spells to build.
       const sealedPool = api.getSealedPool ? await api.getSealedPool() : null;
       if (sealedPool && (!latest || (sealedPool.at ?? 0) >= (latest.at ?? 0))) {
         await api.openReview(sealedPool.url);
         return;
       }
       if (latest) {
-        await api.openReview(`https://23spells.pages.dev/${latest.set ? `?set=${latest.set}` : ''}#arena=${latest.course}`);
+        await api.openReview(`/${latest.set ? `?set=${latest.set}` : ''}#arena=${latest.course}`);
         return;
       }
       const data = await api.getReview();
@@ -865,9 +865,9 @@ export function mountOverlay(root: HTMLElement, api: OverlayApi): void {
         await new Promise((r) => setTimeout(r, 2200));
         return;
       }
-      await api.openReview(`https://23spells.pages.dev/?set=${set}#review=2-${set}-${parts.join('_')}`);
+      await api.openReview(`/?set=${set}#review=2-${set}-${parts.join('_')}`);
     } finally {
-      reviewButton.textContent = 'Review in 23spells';
+      reviewButton.textContent = 'Review in 24spells';
     }
   });
 
@@ -962,7 +962,7 @@ export function mountOverlay(root: HTMLElement, api: OverlayApi): void {
         const label = sh.kind === 'splash' ? `${wubrg(sh.core)}+${sh.splash.toLowerCase()}` : wubrg(sh.colors);
         colorsRow.append(element('span', 'coach-row-sub', `Splash or 3+: ${Math.round(wideP * 100)}% (${label})`));
       }
-      colorsRow.title = 'Your likely colors, from your picks and what is flowing (23spells coach)';
+      colorsRow.title = 'Your likely colors, from your picks and what is flowing (24spells coach)';
     }
     const results = grades.draftId === view?.draftId ? grades.results : [];
     const showGrade = inDraft && settings.coachGrades && results.length > 0;
@@ -975,7 +975,7 @@ export function mountOverlay(root: HTMLElement, api: OverlayApi): void {
       const lastSpan = element('span', 'coach-row-sub', `Last: ${BADGE_GLYPH[last.badge]} ${last.badge}`);
       lastSpan.style.color = BADGE_COLOR[last.badge];
       gradeRow.append(lastSpan);
-      gradeRow.title = 'Chess-style grades vs the coach, like the 23spells draft review';
+      gradeRow.title = 'Chess-style grades vs the coach, like the 24spells draft review';
     }
   }
 

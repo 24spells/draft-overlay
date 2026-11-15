@@ -1,12 +1,12 @@
-// Records real Arena drafts and games and sends them to 23spells (2026-11-13:
-// "log real games on 23spells"). Log reading only, like the rest of the app.
+// Records real Arena drafts and games and sends them to 24spells (2026-11-13:
+// "log real games on 24spells"). Log reading only, like the rest of the app.
 //
 //  1. Archive: Arena replaces Player.log at every launch, so each log is kept as
 //     arena-logs/Player-<created>.log.gz (raw data is never thrown away).
 //  2. Records: core/arena-records.ts turns the log into one record per draft and
 //     per game, saved as arena-records/<kind>-<id>.json (card ids plus names).
-//  3. Sync: records go to the player's 23spells save with a device key. Pairing:
-//     "Connect to 23spells" opens the site with the key in the #fragment; the site,
+//  3. Sync: records go to the player's 24spells save with a device key. Pairing:
+//     "Connect to 24spells" opens the site with the key in the #fragment; the site,
 //     signed in with name + PIN, registers it. No PIN is ever stored here.
 //
 // Never uploaded: player names, account ids. The parser does not keep them.
@@ -17,8 +17,7 @@ import { readFile } from 'node:fs/promises';
 import path from 'node:path';
 import { gzipSync } from 'node:zlib';
 import { readArenaLog } from './build/core/arena-records.js';
-
-const SITE = 'https://23spells.pages.dev';
+import { SITE } from './site.mjs';
 const BATCH = 20;
 const SCAN_DELAY_MS = 8000;
 const SYNC_EVERY_MS = 10 * 60 * 1000;
@@ -164,13 +163,13 @@ export function createArenaRecorder({ userDir, logPath, namesFor, onChange = () 
         try {
           const r = await fetch(`${SITE}/api/arena/device`, { headers: { 'x-device-token': state.token } });
           if (!r.ok) {
-            lastError = 'waiting for 23spells to connect';
+            lastError = 'waiting for 24spells to connect';
             onChange();
             return;
           }
           state.name = (await r.json()).name;
           saveState();
-          log(`arena: connected to 23spells as ${state.name}`);
+          log(`arena: connected to 24spells as ${state.name}`);
         } catch {
           lastError = 'offline';
           onChange();
@@ -212,7 +211,7 @@ export function createArenaRecorder({ userDir, logPath, namesFor, onChange = () 
     return syncing;
   }
 
-  /** Open 23spells to connect this PC, then wait for the site to confirm. */
+  /** Open 24spells to connect this PC, then wait for the site to confirm. */
   function connect(openExternal) {
     state.token ??= randomBytes(32).toString('hex');
     saveState();
@@ -226,7 +225,7 @@ export function createArenaRecorder({ userDir, logPath, namesFor, onChange = () 
           state.name = (await r.json()).name;
           saveState();
           clearInterval(poll);
-          log(`arena: connected to 23spells as ${state.name}`);
+          log(`arena: connected to 24spells as ${state.name}`);
           onChange();
           await sync();
           return;
@@ -246,7 +245,7 @@ export function createArenaRecorder({ userDir, logPath, namesFor, onChange = () 
     onChange();
   }
 
-  /** The newest recorded draft (or game), once it is on 23spells. Null when not connected. */
+  /** The newest recorded draft (or game), once it is on 24spells. Null when not connected. */
   async function latest() {
     if (!state.token) return null;
     await scanAll();

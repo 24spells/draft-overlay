@@ -1,7 +1,9 @@
+<img src="build/icon.png" alt="" width="96" height="96">
+
 # Draft Overlay
 
 A free Windows overlay for MTG Arena drafts. It puts each card's 17Lands public stats right on the
-pack while you pick, and pairs with the [23spells draft trainer](https://23spells.pages.dev) for your
+pack while you pick, and pairs with the [24spells draft trainer](https://23spells.pages.dev) for your
 record, run reviews and practice.
 
 **Download:** [23spells.pages.dev/overlay](https://23spells.pages.dev/overlay), or the newest
@@ -14,14 +16,14 @@ Mac: not yet.
 
 - Reads Arena's own log file while you draft and shows card stats on each card in the pack
   (games-in-hand win rate, grade and pick order).
-- Opens Arena sealed pools in the 23spells deck builder.
-- Optional: connect it to a 23spells save to keep your drafts, games and record on any device.
+- Opens Arena sealed pools in the 24spells deck builder.
+- Optional: connect it to a 24spells save to keep your drafts, games and record on any device.
 
 ## What it does not do
 
 - It only reads the log file. No memory reading, no code injection, no clicking or typing for you.
 - It never sends opponent names or Arena account IDs anywhere. Those stay on your PC.
-- Nothing leaves your PC unless you connect it to 23spells. What is stored and how to delete it:
+- Nothing leaves your PC unless you connect it to 24spells. What is stored and how to delete it:
   [23spells.pages.dev/#privacy](https://23spells.pages.dev/#privacy).
 
 ## Setup
@@ -32,7 +34,7 @@ The installer opens a three-step setup window. You can reopen it from the tray i
 1. **Arena found.** Install MTG Arena and open it once.
 2. **Detailed Logs on.** In Arena: **Options → View Account → Detailed Logs (Plugin Support)**,
    then restart Arena. ([Arena's instructions](https://mtgarena-support.wizards.com/hc/en-us/articles/360000726823-Creating-Log-Files-on-PC-Mac-Steam))
-3. **Connect to 23spells** (optional).
+3. **Connect to 24spells** (optional).
 
 Windows may say "Windows protected your PC" because the installer isn't signed yet. Click
 **More info → Run anyway**.
@@ -47,7 +49,7 @@ npm run dist     # build the installer into dist/ (no auto-update feed)
 npm run release  # maintainers: bump, build and publish a GitHub release
 ```
 
-Card stats come from 23spells by default. `scripts/build-stats.mjs` builds them locally from the
+Card stats come from 24spells by default. `scripts/build-stats.mjs` builds them locally from the
 17Lands public files instead.
 
 ## Data and credits

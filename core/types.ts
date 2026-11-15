@@ -54,7 +54,7 @@ export type DraftView = {
 export type LoadedStats = { stats: SetStats; note: string | null };
 
 /**
- * The web trainer's files for one set (from 23spells.pages.dev), for the coach
+ * The web trainer's files for one set (from the 24spells site), for the coach
  * hint: the set file (cards with text, plus stats), the flow baseline, and
  * the measured deck-shape prices, and what is worth splashing per color pair.
  * Flow, prices and splash data may be missing (new sets).
@@ -73,13 +73,13 @@ export type OverlayApi = {
   setInteractive: (interactive: boolean) => void;
   /** The trainer's coach files for a set, or null (offline, or no such set on the site). */
   getCoachData?: (setCode: string) => Promise<CoachData | null>;
-  /** The current draft from Arena's log: each pick's pack and the card taken (Review in 23spells). */
+  /** The current draft from Arena's log: each pick's pack and the card taken (Review in 24spells). */
   getReview?: () => Promise<ReviewData | null>;
-  /** Opens a 23spells link in the browser (only that site). */
+  /** Opens a 24spells link in the browser (only that site). */
   openReview?: (url: string) => Promise<boolean>;
-  /** The newest recorded Arena run, when the overlay is connected to 23spells (its records survive Arena's log resets). */
+  /** The newest recorded Arena run, when the overlay is connected to 24spells (its records survive Arena's log resets). */
   getLatestRun?: () => Promise<{ set: string | null; course: string; at?: number | null } | null>;
-  /** The newest sealed pool in Arena's logs, as a 23spells link (2026-11-14). */
+  /** The newest sealed pool in Arena's logs, as a 24spells link (2026-11-14). */
   getSealedPool?: () => Promise<{ set: string; event: string; at: number | null; cards: number; unknown: number; url: string } | null>;
 };
 

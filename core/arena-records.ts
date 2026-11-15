@@ -1,5 +1,5 @@
-// Real Arena drafts and games, read from Player.log, as records the 23spells site
-// can review (2026-11-13: "log real games on 23spells"). Log reading only:
+// Real Arena drafts and games, read from Player.log, as records the 24spells site
+// can review (2026-11-13: "log real games on 24spells"). Log reading only:
 // the same file the stats overlay follows. Pure: text in, records out, so it
 // runs on the live log, the previous log, and every archived copy alike.
 //
@@ -72,7 +72,7 @@ export type ArenaGameRecord = {
 /**
  * A sealed (or traditional sealed) pool (2026-11-14: "a single push button to export the pool into
  * the web client"). Arena lists each event you are in with its CardPool; for sealed, that is the
- * opened pool. Read straight from the log on demand, not sent to 23spells.
+ * opened pool. Read straight from the log on demand, not sent to 24spells.
  */
 export type ArenaSealedPool = {
   kind: 'sealed';

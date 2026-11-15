@@ -3,13 +3,13 @@
 // switch is on). Reads the log and window positions only. Never touches Arena's memory.
 //
 // Public release work (2026-11-14, plan: MTG AI references/overlay-public-plan.md):
-//   - Card stats come from 23spells (overlay-data/), built there from 17Lands' public
+//   - Card stats come from 24spells (overlay-data/), built there from 17Lands' public
 //     datasets. Building locally from 17Lands' raw files (incl. the early website data)
 //     is a personal setting, localBuild, off for everyone else.
 //   - First-run setup window (app/setup.html): Arena found, Detailed Logs on, connect to
-//     23spells, share switches, start with Windows.
+//     24spells, share switches, start with Windows.
 //   - Updates itself from GitHub Releases (electron-updater) once a release feed is
-//     configured (scripts/release.mjs); 23spells' overlay/latest.json sets a minimum version.
+//     configured (scripts/release.mjs); 24spells' overlay/latest.json sets a minimum version.
 
 import {
   app,
@@ -41,6 +41,7 @@ import readline from 'node:readline';
 import { DraftTracker, parseLogLine } from './build/core/log-parser.js';
 import { LogWatcher } from './build/core/log-watcher.js';
 import { createArenaRecorder } from './arena-sync.mjs';
+import { SITE } from './site.mjs';
 import { readArenaLog } from './build/core/arena-records.js';
 import { gunzipSync } from 'node:zlib';
 import { createRequire } from 'node:module';
@@ -93,7 +94,7 @@ let view = null;
 let viewDirty = false;
 let live = false;
 let saveFile = null;
-/** Real drafts and games, recorded and sent to 23spells (see arena-sync.mjs). */
+/** Real drafts and games, recorded and sent to 24spells (see arena-sync.mjs). */
 let arena = null;
 // A draft or game just ended: re-read the log for records.
 const RECORD_MARKERS = ['GameStage_GameOver', 'MatchGameRoomStateType_MatchCompleted', 'DraftCompleteDraft', 'EventSetDeck'];
@@ -173,15 +174,8 @@ function applyStartWithWindows(enabled) {
 
 // ---------- Tray ----------
 function trayIcon() {
-  const size = 16;
-  const pixels = Buffer.alloc(size * size * 4);
-  for (let i = 0; i < pixels.length; i += 4) {
-    pixels[i] = 0x6b; // blue
-    pixels[i + 1] = 0xd0; // green
-    pixels[i + 2] = 0xf2; // red
-    pixels[i + 3] = 0xff;
-  }
-  return nativeImage.createFromBitmap(pixels, { width: size, height: size });
+  // The 24spells mark; Electron picks tray@1.5x / tray@2x on scaled displays (scripts/make-icons.mjs).
+  return nativeImage.createFromPath(path.join(APP_DIR, 'icons', 'tray.png'));
 }
 
 function refreshTray() {
@@ -224,17 +218,17 @@ function arenaMenu() {
   const games = `${s.total} draft and game record${s.total === 1 ? '' : 's'} on this PC`;
   if (!s.connected) {
     return [
-      { label: `23spells: not connected (${games})`, enabled: false },
-      { label: 'Connect to 23spells...', click: () => arena.connect((url) => shell.openExternal(url)) },
-      { label: 'Build my sealed pool in 23spells', click: () => void openSealedPool() },
+      { label: `24spells: not connected (${games})`, enabled: false },
+      { label: 'Connect to 24spells...', click: () => arena.connect((url) => shell.openExternal(url)) },
+      { label: 'Build my sealed pool in 24spells', click: () => void openSealedPool() },
     ];
   }
   return [
-    { label: `23spells: ${s.connected}${s.waiting ? `, ${s.waiting} to send` : ', all sent'}${s.error ? ` (${s.error})` : ''}`, enabled: false },
-    { label: 'Open my Arena games', click: () => void shell.openExternal('https://23spells.pages.dev/#arena') },
-    { label: 'Build my sealed pool in 23spells', click: () => void openSealedPool() },
+    { label: `24spells: ${s.connected}${s.waiting ? `, ${s.waiting} to send` : ', all sent'}${s.error ? ` (${s.error})` : ''}`, enabled: false },
+    { label: 'Open my Arena games', click: () => void shell.openExternal(`${SITE}/#arena`) },
+    { label: 'Build my sealed pool in 24spells', click: () => void openSealedPool() },
     { label: 'Send now', click: () => void arena.scanAll() },
-    { label: 'Disconnect from 23spells', click: () => arena.disconnect() },
+    { label: 'Disconnect from 24spells', click: () => arena.disconnect() },
   ];
 }
 
@@ -715,11 +709,11 @@ ipcMain.handle('overlay:stats', (_event, setCode, format, cardIds) => {
     : null;
 });
 
-// ---------- The web trainer's coach files (23spells) ----------
+// ---------- The web trainer's coach files (24spells) ----------
 // The coach hint runs the trainer's engine on the trainer's own set files, so
 // the overlay and the site agree. Cached on disk; refreshed at most daily, in
 // the background, so a draft never waits on the network once a set is cached.
-const COACH_SITE = 'https://23spells.pages.dev/sets';
+const COACH_SITE = `${SITE}/sets`;
 const COACH_DIR = path.join(USER_DIR, 'coach-data');
 const COACH_MAX_AGE_MS = 24 * 60 * 60 * 1000;
 const coachCache = new Map();
@@ -884,12 +878,10 @@ function runSmokeTest(shotPath) {
   }, 5000);
 }
 
-// ---------- Card stats from 23spells ----------
+// ---------- Card stats from 24spells ----------
 // The site hosts each set's stats file (built from 17Lands' public datasets, CC BY 4.0, credited on
 // screen) plus index.json. Installed copies download the newest sets in the background and any other
 // set the first time it is drafted: small files, seconds, nothing crunched on the player's PC.
-// OVERLAY_SITE: point a test run at a local copy of the site (e.g. http://localhost:5173).
-const SITE = process.env.OVERLAY_SITE ?? 'https://23spells.pages.dev';
 const HOSTED = `${SITE}/overlay-data`;
 const HOSTED_NEWEST = 4;
 let hostedIndex = null;
@@ -918,7 +910,7 @@ async function downloadHostedSet(setCode, index = hostedIndex) {
   const idx = index ?? (await fetchHostedIndex());
   const formats = idx?.sets?.[setCode];
   if (!formats) {
-    logData(`hosted ${setCode}: not on 23spells yet`);
+    logData(`hosted ${setCode}: not on 24spells yet`);
     return builtAt(setCode) !== null;
   }
   mkdirSync(DATA_DIR, { recursive: true });
@@ -959,7 +951,7 @@ async function refreshHosted(reason) {
   try {
     const idx = await fetchHostedIndex();
     if (!idx) {
-      logData(`hosted check (${reason}): 23spells unreachable`);
+      logData(`hosted check (${reason}): 24spells unreachable`);
       return;
     }
     const newest = (idx.order ?? Object.keys(idx.sets)).slice(0, HOSTED_NEWEST);
@@ -1017,6 +1009,7 @@ function openSetup() {
     width: 620,
     height: 780,
     title: 'Draft Overlay setup',
+    icon: path.join(APP_DIR, 'icons', 'tray@2x.png'),
     backgroundColor: '#0f1115',
     autoHideMenuBar: true,
     show: false,
@@ -1137,7 +1130,7 @@ function newer(a, b) {
   return false;
 }
 
-/** 23spells says which versions still work with the site; an older one asks to update. */
+/** 24spells says which versions still work with the site; an older one asks to update. */
 async function checkMinimumVersion() {
   try {
     const r = await fetch(`${SITE}/overlay/latest.json?t=${Date.now()}`, { signal: AbortSignal.timeout(15000) });
@@ -1222,9 +1215,9 @@ app.whenReady().then(() => {
   setInterval(() => void refreshInBackground('every 6 hours'), REFRESH_EVERY_MS);
 });
 
-// ---------- Sealed: build your pool in 23spells (2026-11-14) ----------
+// ---------- Sealed: build your pool in 24spells (2026-11-14) ----------
 // Arena lists every event you are in with its card pool; for a sealed event that is the pool you
-// opened. The newest one, from the live log, the previous log or an archived copy, goes to 23spells
+// opened. The newest one, from the live log, the previous log or an archived copy, goes to 24spells
 // as a card list in the link (#pool=...), which opens the site's import with the set's sealed numbers.
 async function latestSealedPool() {
   const files = [LOG_PATH, path.join(path.dirname(LOG_PATH), 'Player-prev.log')];
@@ -1257,7 +1250,7 @@ async function latestSealedPool() {
   }
   const list = [...counts].map(([n, c]) => `${c} ${n}`).join('\n');
   return { set: best.set, event: best.event, at: best.at, wins: best.wins, losses: best.losses, cards: best.pool.length, unknown, list,
-    url: `https://23spells.pages.dev/?set=${best.set}#pool=${encodeURIComponent(list)}` };
+    url: `/?set=${best.set}#pool=${encodeURIComponent(list)}` };
 }
 ipcMain.handle('overlay:sealed-pool', async () => latestSealedPool());
 async function openSealedPool() {
@@ -1266,15 +1259,15 @@ async function openSealedPool() {
     logData('sealed: no sealed pool in Arena\'s logs yet');
     return false;
   }
-  logData(`sealed: opening ${p.set} pool (${p.cards} cards${p.unknown ? `, ${p.unknown} unnamed` : ''}) in 23spells`);
+  logData(`sealed: opening ${p.set} pool (${p.cards} cards${p.unknown ? `, ${p.unknown} unnamed` : ''}) in 24spells`);
   void shell.openExternal(p.url);
   return true;
 }
 
-// ---------- Review in 23spells (2026-11-13) ----------
+// ---------- Review in 24spells (2026-11-13) ----------
 // The current draft, read straight from Arena's log (complete even if the overlay
 // restarted mid-draft): every pick's pack and the card taken. The renderer turns it
-// into a 23spells link; the draft travels in the link itself, nothing is uploaded.
+// into a 24spells link; the draft travels in the link itself, nothing is uploaded.
 ipcMain.handle('overlay:review', async () => {
   let text;
   try {
@@ -1309,13 +1302,14 @@ ipcMain.handle('overlay:review', async () => {
   return picks.length ? { setCode, format, picks } : null;
 });
 
-// The newest recorded run, opened on 23spells (works after Arena replaced its log).
+// The newest recorded run, opened on 24spells (works after Arena replaced its log).
 ipcMain.handle('overlay:latest-run', async () => (arena ? arena.latest() : null));
 
-ipcMain.handle('overlay:open-review', (_event, url) => {
-  if (typeof url !== 'string' || !url.startsWith('https://23spells.pages.dev/')) {
+ipcMain.handle('overlay:open-review', (_event, link) => {
+  // The overlay page sends a path on the site ("/?set=...#review=..."); only the site is ever opened.
+  if (typeof link !== 'string' || !link.startsWith('/')) {
     return false;
   }
-  void shell.openExternal(url);
+  void shell.openExternal(`${SITE}${link}`);
   return true;
 });
