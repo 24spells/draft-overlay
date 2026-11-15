@@ -15,8 +15,10 @@ import { createHash, randomBytes } from 'node:crypto';
 import { existsSync, mkdirSync, readdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { readFile } from 'node:fs/promises';
 import path from 'node:path';
-import { gzipSync } from 'node:zlib';
+import { gunzipSync, gzipSync } from 'node:zlib';
 import { readArenaLog } from './build/core/arena-records.js';
+// Full action-by-action replays of each game (2026-11-15), gzipped into the game record.
+import { readReplays, replayIds, REPLAY_VERSION } from './build/core/replay.js';
 import { SITE } from './site.mjs';
 const BATCH = 20;
 const SCAN_DELAY_MS = 8000;
@@ -29,7 +31,7 @@ export function createArenaRecorder({ userDir, logPath, namesFor, onChange = () 
   const recDir = path.join(userDir, 'arena-records');
   const logDir = path.join(userDir, 'arena-logs');
   const statePath = path.join(userDir, 'arena-sync.json');
-  let state = { token: null, name: null, synced: {}, archived: {}, scanned: [] };
+  let state = { token: null, name: null, synced: {}, archived: {}, scanned: [], replayed: [] };
   try {
     state = { ...state, ...JSON.parse(readFileSync(statePath, 'utf8')) };
   } catch {
@@ -78,26 +80,31 @@ export function createArenaRecorder({ userDir, logPath, namesFor, onChange = () 
   async function scanFile(file) {
     let text;
     try {
-      text = await readFile(file, 'utf8');
+      text = file.endsWith('.gz') ? gunzipSync(await readFile(file)).toString('utf8') : await readFile(file, 'utf8');
     } catch {
       return 0;
     }
     if (file.endsWith('Player.log') || file.endsWith('Player-prev.log')) archive(file, text);
     const { drafts, games, basics } = readArenaLog(text);
+    const replays = readReplays(text);
     mkdirSync(recDir, { recursive: true });
     let changed = 0;
     for (const rec of [...drafts, ...games]) {
       // A game with no deck or no turns is a lobby glitch, not a game.
       if (rec.kind === 'game' && (!rec.deck.length || !rec.turns.length)) continue;
       const set = setOf(rec);
-      const ids = [...new Set(idsOf(rec).filter((x) => x > 0))];
+      const replay = rec.kind === 'game' ? replays.get(rec.id) : undefined;
+      const ids = [...new Set([...idsOf(rec), ...(replay ? replayIds(replay) : [])].filter((x) => x > 0))];
       const names = {};
       const known = namesFor(set, ids);
       for (const id of ids) {
         const n = known[id] ?? basics[String(id)];
         if (n) names[id] = n;
       }
-      const out = { id: rec.id, kind: rec.kind, course: rec.course, at: rec.at, summary: summaryOf(rec, set), body: { ...rec, set, names } };
+      // The replay rides gzipped (3-10 KB a game); rf = its frame count, so a partial copy of a game
+      // (a log cut short) never replaces a fuller replay.
+      const extra = replay ? { replay: gzipSync(JSON.stringify(replay)).toString('base64'), rf: replay.frames.length, rv: REPLAY_VERSION } : {};
+      const out = { id: rec.id, kind: rec.kind, course: rec.course, at: rec.at, summary: summaryOf(rec, set), body: { ...rec, set, names, ...extra } };
       const file2 = path.join(recDir, `${rec.kind}-${rec.id}.json`);
       const text2 = JSON.stringify(out);
       let before = null;
@@ -108,6 +115,7 @@ export function createArenaRecorder({ userDir, logPath, namesFor, onChange = () 
       }
       // A game read from a log that was cut short must not replace a complete one.
       if (before && rec.kind === 'game' && rec.result === null && JSON.parse(before).body?.result) continue;
+      if (before && rec.kind === 'game' && (JSON.parse(before).body?.rf ?? 0) > (extra.rf ?? 0)) continue;
       if (before === text2) continue;
       writeFileSync(file2, text2);
       changed += 1;
@@ -124,6 +132,15 @@ export function createArenaRecorder({ userDir, logPath, namesFor, onChange = () 
           if (!name.endsWith('.log') || state.scanned.includes(name)) continue;
           changed += await scanFile(path.join(logDir, name));
           state.scanned.push(name);
+        }
+      }
+      // Replays for games played before replays existed: every saved log, once (gzipped archives too).
+      if (existsSync(logDir)) {
+        state.replayed ??= [];
+        for (const name of readdirSync(logDir)) {
+          if (!/\.log(\.gz)?$/.test(name) || state.replayed.includes(name)) continue;
+          changed += await scanFile(path.join(logDir, name));
+          state.replayed.push(name);
         }
       }
       changed += await scanFile(path.join(path.dirname(logPath), 'Player-prev.log'));
