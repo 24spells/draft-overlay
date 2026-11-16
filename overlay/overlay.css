@@ -945,6 +945,17 @@
   background: #348474;
 }
 
+/* 0.3.9: shown only while this PC is not linked to 24spells. Gold, like the site's Get the overlay. */
+.connect-button {
+  color: #1a1408;
+  background: #e8b04b;
+  font-weight: 800;
+}
+.connect-button:hover {
+  color: #1a1408;
+  background: #f2c466;
+}
+
 /* The flow meter row (0.3.8): the trainer's bars, one per color, up = flowing, down = drying up. */
 .coach-flow {
   display: flex;

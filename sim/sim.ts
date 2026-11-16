@@ -2,7 +2,7 @@
 // Runs the real overlay. Only this file and sim.css are preview-only.
 
 import { cardRect, gridGeometry, positionCards } from '../core/layout.ts';
-import type { DraftView, SetStats } from '../core/types.ts';
+import type { AccountState, DraftView, SetStats } from '../core/types.ts';
 import { mountOverlay } from '../overlay/overlay.ts';
 
 type SimPack = DraftView & { taken: number | null };
@@ -48,6 +48,8 @@ async function start(): Promise<void> {
   let packIndex = 0;
   let viewCallback: (view: DraftView | null) => void = () => {};
   let hideCallback: () => void = () => {};
+  let account: AccountState = { connected: new URLSearchParams(location.search).has('connected') ? 'you' : null, pairing: false };
+  let accountCallback: (next: AccountState) => void = () => {};
 
   mountOverlay(document.getElementById('overlay')!, {
     onDraftView(callback) {
@@ -66,6 +68,16 @@ async function start(): Promise<void> {
       return () => {};
     },
     setInteractive() {},
+    // The Connect button (0.3.9): ?connected=1 previews a linked PC (no button).
+    getAccount: async () => account,
+    onAccount(callback) {
+      accountCallback = callback;
+      return () => {};
+    },
+    connectAccount: async () => {
+      account = { connected: null, pairing: true };
+      accountCallback(account);
+    },
   });
 
   function drawStage(pack: SimPack): void {

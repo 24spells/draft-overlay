@@ -1230,6 +1230,7 @@ app.whenReady().then(() => {
     namesFor,
     onChange: () => {
       refreshTray();
+      sendAccount();
       if (setupWindow && !setupWindow.isDestroyed()) setupWindow.webContents.send('setup:changed');
     },
     log: logData,
@@ -1353,6 +1354,25 @@ ipcMain.handle('overlay:review', async () => {
 
 // The newest recorded run, opened on 24spells (works after Arena replaced its log).
 ipcMain.handle('overlay:latest-run', async () => (arena ? arena.latest() : null));
+
+// 0.3.9 (Ken 2026-11-16: "how do we make them connect their account"): the overlay shows a
+// Connect to 24spells button inside Arena, only while this PC is not linked.
+function accountState() {
+  if (!arena) return null;
+  const s = arena.status();
+  return { connected: s.connected ?? null, pairing: s.pairing };
+}
+function sendAccount() {
+  const state = accountState();
+  if (state && overlay && !overlay.isDestroyed() && !overlay.webContents.isLoading()) {
+    overlay.webContents.send('overlay:account', state);
+  }
+}
+ipcMain.handle('overlay:account', () => accountState());
+ipcMain.handle('overlay:connect', () => {
+  arena?.connect((url) => shell.openExternal(url));
+  sendAccount();
+});
 
 ipcMain.handle('overlay:open-review', (_event, link) => {
   // The overlay page sends a path on the site ("/?set=...#review=..."); only the site is ever opened.

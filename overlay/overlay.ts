@@ -24,6 +24,7 @@ import {
   type MetricId,
 } from '../core/stats.ts';
 import type {
+  AccountState,
   CardMeta,
   DraftView,
   LoadedStats,
@@ -345,8 +346,12 @@ export function mountOverlay(root: HTMLElement, api: OverlayApi): void {
   // 2026-11-13: send this draft to 24spells for the full review and deck building.
   const reviewButton = element('button', 'stack-row stack-button review-button', 'Review in 24spells');
   reviewButton.title = 'Open this draft on 24spells: every pick graded, then build your deck with the coach, the laws of drafting and synergy. The draft travels in the link; nothing is uploaded.';
+  // 0.3.9 (Ken 2026-11-16): only while this PC is not linked to a 24spells account.
+  const connectButton = element('button', 'stack-row stack-button connect-button');
+  connectButton.title = 'Send your Arena drafts and games to your Record on 24spells. Opens 24spells to sign in with Discord.';
+  let account: AccountState | null = null;
   const foldButton = element('button', 'stack-row stack-button fold-button');
-  for (const button of [statsButton, coachButton, reviewButton, settingsButton, foldButton]) {
+  for (const button of [statsButton, coachButton, reviewButton, connectButton, settingsButton, foldButton]) {
     button.type = 'button';
   }
   const panel = element('section', 'settings-panel');
@@ -355,7 +360,7 @@ export function mountOverlay(root: HTMLElement, api: OverlayApi): void {
 
   mainLabel.append(element('span', 'stack-label', 'Show'), wrapSelect(mainSelect));
   deckLabel.append(element('span', 'stack-label', 'Compare'), wrapSelect(deckSelect));
-  stack.append(setInfo, statsButton, coachButton, colorsRow, flowRow, gradeRow, mainLabel, deckLabel, reviewButton, settingsButton, foldButton);
+  stack.append(setInfo, statsButton, coachButton, colorsRow, flowRow, gradeRow, mainLabel, deckLabel, reviewButton, connectButton, settingsButton, foldButton);
   controls.append(stack, panel, status, credit);
   root.append(plates, hoverPanel, controls, toast);
 
@@ -701,6 +706,9 @@ export function mountOverlay(root: HTMLElement, api: OverlayApi): void {
     // Always reachable when no pack is on screen (after the draft, at deckbuilding), even folded;
     // during a pack it follows the fold. It reads Arena's log itself, so it works after a restart.
     reviewButton.hidden = !api.getReview || !api.openReview || (!!view && folded);
+    // Same reach as Review: even folded when no pack is on screen. Never once connected.
+    connectButton.hidden = !api.connectAccount || !account || Boolean(account.connected) || (!!view && folded);
+    connectButton.textContent = account?.pairing ? 'Finish connecting on 24spells' : 'Connect to 24spells';
     foldButton.textContent = folded ? '▲ Overlay' : '▼ Close';
     foldButton.title = folded ? 'Open the overlay controls' : 'Fold the overlay controls';
 
@@ -1067,6 +1075,10 @@ export function mountOverlay(root: HTMLElement, api: OverlayApi): void {
     }
   });
 
+  connectButton.addEventListener('click', () => {
+    void api.connectAccount?.();
+  });
+
   settingsButton.addEventListener('click', () => {
     panelOpen = !panelOpen;
     renderSettings();
@@ -1281,6 +1293,15 @@ export function mountOverlay(root: HTMLElement, api: OverlayApi): void {
     mouseY = event.clientY;
     updateHover(event.clientX, event.clientY);
     updateInteractive(event.clientX, event.clientY);
+  });
+
+  api.onAccount?.((next) => {
+    account = next;
+    renderAll();
+  });
+  void api.getAccount?.().then((next) => {
+    account = next;
+    renderAll();
   });
 
   api.onToggleHidden(() => {

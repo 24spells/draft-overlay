@@ -81,7 +81,15 @@ export type OverlayApi = {
   getLatestRun?: () => Promise<{ set: string | null; course: string; at?: number | null } | null>;
   /** The newest sealed pool in Arena's logs, as a 24spells link (2026-11-14). */
   getSealedPool?: () => Promise<{ set: string; event: string; at: number | null; cards: number; unknown: number; url: string } | null>;
+  /** Whether this PC sends its Arena games to a 24spells account (0.3.9: the Connect button shows only when not). */
+  getAccount?: () => Promise<AccountState | null>;
+  onAccount?: (callback: (account: AccountState) => void) => () => void;
+  /** Opens 24spells to sign in and link this PC. */
+  connectAccount?: () => Promise<void>;
 };
+
+/** connected: the 24spells name, or null. pairing: the sign-in page was opened and not finished yet. */
+export type AccountState = { connected: string | null; pairing: boolean };
 
 export type ReviewData = {
   setCode: string | null;
