@@ -712,18 +712,29 @@ export function mountOverlay(root: HTMLElement, api: OverlayApi): void {
     foldButton.textContent = folded ? '▲ Overlay' : '▼ Close';
     foldButton.title = folded ? 'Open the overlay controls' : 'Fold the overlay controls';
 
-    setInfo.textContent = view
-      ? `${view.setCode ?? loaded?.stats.set ?? '?'} · ${FORMAT_NAMES[view.format] ?? 'Draft'}`
+    // Panel look (0.3.9, Ken: "make that overlay panel look a little more slick"): set chip + what is open.
+    const shownSet = view?.setCode ?? lastView?.setCode ?? loaded?.stats.set ?? null;
+    const what = view
+      ? (FORMAT_NAMES[view.format] ?? 'Draft')
       : lastView && !(lastView.packNumber >= 3 && lastView.cardIds.length <= 1)
-        ? `${lastView.setCode ?? loaded?.stats.set ?? '?'} · waiting for the next pack`
+        ? 'Waiting for the next pack'
         : 'No draft open';
+    setInfo.textContent = '';
+    if (shownSet && (view || what !== 'No draft open')) setInfo.append(element('span', 'set-chip', shownSet));
+    setInfo.append(element('span', 'set-what', what));
 
-    statsButton.textContent = `Stats: ${settings.showStats ? 'ON' : 'OFF'}`;
-    statsButton.classList.toggle('on', settings.showStats);
-    coachButton.textContent = `Coach: ${settings.coachHint ? 'ON' : 'OFF'}`;
-    coachButton.classList.toggle('on', settings.coachHint);
+    switchLabel(statsButton, 'Stats', settings.showStats);
+    switchLabel(coachButton, 'Coach', settings.coachHint);
     mainSelect.value = settings.main;
     deckSelect.value = settings.deck;
+  }
+
+  /** A toggle row: its name, then a small on/off switch (state also in the title for screen readers). */
+  function switchLabel(button: HTMLElement, name: string, on: boolean): void {
+    button.textContent = '';
+    button.append(element('span', 'switch-name', name), element('span', 'switch'));
+    button.classList.toggle('on', on);
+    button.setAttribute('aria-pressed', String(on));
   }
 
   function renderAll(): void {
@@ -1164,6 +1175,7 @@ export function mountOverlay(root: HTMLElement, api: OverlayApi): void {
       const wide = (coachView?.shapes ?? []).filter((s) => s.shape.kind !== 'pair');
       const wideP = wide.reduce((a, s) => a + s.p, 0);
       colorsRow.textContent = '';
+      colorsRow.append(element('span', 'row-cap', 'Your colors'));
       colorsRow.append(element('span', 'coach-row-main', top.map((o) => `${wubrg(o.pair)} ${Math.round(o.p * 100)}%`).join(' · ') || 'Colors open'));
       if (wideP >= 0.15 && wide[0]) {
         const sh = wide[0].shape;
@@ -1180,7 +1192,8 @@ export function mountOverlay(root: HTMLElement, api: OverlayApi): void {
       const accuracy = results.reduce((a, r) => a + r.accuracy, 0) / results.length;
       const last = results[results.length - 1];
       gradeRow.textContent = '';
-      gradeRow.append(element('span', 'coach-row-main', `Accuracy ${Math.round(accuracy)} · ${results.length} pick${results.length === 1 ? '' : 's'}`));
+      gradeRow.append(element('span', 'row-cap', 'Accuracy'));
+      gradeRow.append(element('span', 'coach-row-main', `${Math.round(accuracy)} · ${results.length} pick${results.length === 1 ? '' : 's'}`));
       const lastSpan = element('span', 'coach-row-sub', `Last: ${BADGE_GLYPH[last.badge]} ${last.badge}`);
       lastSpan.style.color = BADGE_COLOR[last.badge];
       gradeRow.append(lastSpan);
@@ -1199,8 +1212,8 @@ export function mountOverlay(root: HTMLElement, api: OverlayApi): void {
     if (!show || !flow || !view) return;
     const from = view.packNumber === 2 ? 'left' : 'right';
     flowRow.textContent = '';
+    flowRow.append(element('span', 'row-cap', 'Flow'));
     const top = element('div', 'flow-top');
-    top.append(element('span', 'flow-cap', 'Flow'));
     const bars = element('span', 'flow-bars');
     for (const c of FLOW_ORDER) {
       const score = flow[c] ?? 0;
