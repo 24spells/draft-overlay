@@ -360,7 +360,7 @@ export function mountOverlay(root: HTMLElement, api: OverlayApi): void {
 
   mainLabel.append(element('span', 'stack-label', 'Show'), wrapSelect(mainSelect));
   deckLabel.append(element('span', 'stack-label', 'Compare'), wrapSelect(deckSelect));
-  stack.append(setInfo, statsButton, coachButton, colorsRow, flowRow, gradeRow, mainLabel, deckLabel, reviewButton, connectButton, settingsButton, foldButton);
+  stack.append(connectButton, setInfo, statsButton, coachButton, colorsRow, flowRow, gradeRow, mainLabel, deckLabel, reviewButton, settingsButton, foldButton);
   controls.append(stack, panel, status, credit);
   root.append(plates, hoverPanel, controls, toast);
 
@@ -706,8 +706,8 @@ export function mountOverlay(root: HTMLElement, api: OverlayApi): void {
     // Always reachable when no pack is on screen (after the draft, at deckbuilding), even folded;
     // during a pack it follows the fold. It reads Arena's log itself, so it works after a restart.
     reviewButton.hidden = !api.getReview || !api.openReview || (!!view && folded);
-    // Same reach as Review: even folded when no pack is on screen. Never once connected.
-    connectButton.hidden = !api.connectAccount || !account || Boolean(account.connected) || (!!view && folded);
+    // Top of the panel, open or folded, until this PC is connected (Ken 2026-11-16: "so it can't be missed").
+    connectButton.hidden = !api.connectAccount || !account || Boolean(account.connected);
     connectButton.textContent = account?.pairing ? 'Finish connecting on 24spells' : 'Connect to 24spells';
     foldButton.textContent = folded ? '▲ Overlay' : '▼ Close';
     foldButton.title = folded ? 'Open the overlay controls' : 'Fold the overlay controls';
