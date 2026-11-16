@@ -69,6 +69,7 @@ const FORMAT = 'PremierDraft';
 const DATA_BASE = 'https://17lands-public.s3.amazonaws.com/analysis_data';
 const REFRESH_FIRST_MS = 20 * 1000;
 const REFRESH_EVERY_MS = 6 * 60 * 60 * 1000;
+const HOSTED_CHECK_MS = 15 * 60 * 1000;
 const NEW_SET_MAX_AGE_MS = 60 * 24 * 60 * 60 * 1000; // ignore old sets' files
 const NEW_SET_MIN_CARDS = 150; // booster cards, to skip token and bonus sheets
 const NEW_SET_LOOKBACK = 4; // newest sets in 17Lands' card list to watch
@@ -97,10 +98,14 @@ let saveFile = null;
 /** Real drafts and games, recorded and sent to 24spells (see arena-sync.mjs). */
 let arena = null;
 // A draft or game just ended: re-read the log for records.
-const RECORD_MARKERS = ['GameStage_GameOver', 'MatchGameRoomStateType_MatchCompleted', 'DraftCompleteDraft', 'EventSetDeck'];
+// ClaimPrize / Complete (0.3.7): Arena marks a run finished only after its last game, often minutes later,
+// so a re-read then records the finish (24spells trophies need it).
+const RECORD_MARKERS = ['GameStage_GameOver', 'MatchGameRoomStateType_MatchCompleted', 'DraftCompleteDraft', 'EventSetDeck', '"CurrentModule":"ClaimPrize"', '"CurrentModule":"Complete"'];
 let statusText = 'Waiting for Arena';
 const statsCache = new Map();
-const dataChecked = new Set();
+/** When each set with no stats was last tried (0.3.7: retried every few minutes, not once a session). */
+const dataChecked = new Map();
+const DATA_RETRY_MS = 3 * 60 * 1000;
 let refreshing = false;
 let refreshPending = false;
 let lastPackAt = 0;
@@ -454,6 +459,26 @@ function handleLogLine(line) {
 
 function watchForRecords(line) {
   if (arena && RECORD_MARKERS.some((m) => line.includes(m))) arena.soon();
+  if (arena && line.includes('GameStage_GameOver')) setTimeout(nudgeToConnect, 30_000);
+}
+
+/** 0.3.7: games are kept on this PC but go nowhere until it is connected. Say so after a game, once a day. */
+const NUDGE_EVERY_MS = 20 * 60 * 60 * 1000;
+function nudgeToConnect() {
+  const s = arena?.status();
+  if (!s || s.connected || !Notification.isSupported()) return;
+  const last = readSettings().connectNudgeAt ?? 0;
+  if (Date.now() - last < NUDGE_EVERY_MS) return;
+  writeSettings({ connectNudgeAt: Date.now() });
+  const note = new Notification({
+    title: 'Your games are not on 24spells yet',
+    body: s.pairing
+      ? 'Finish connecting: sign in on 24spells in the browser tab that opened. Click to open it again.'
+      : 'Your results, replays and trophies show up on 24spells once this PC is connected. Click to connect.',
+  });
+  note.on('click', () => arena.connect((url) => shell.openExternal(url)));
+  note.show();
+  logData('arena: reminded to connect to 24spells');
 }
 
 function flushView() {
@@ -685,10 +710,10 @@ async function refreshInBackground(reason) {
 
 /** Last resort for a set the background check never saw: build it now, still off the main thread. */
 async function ensureData(setCode) {
-  if (!setCode || dataChecked.has(setCode) || builtAt(setCode) !== null) {
+  if (!setCode || builtAt(setCode) !== null || Date.now() - (dataChecked.get(setCode) ?? 0) < DATA_RETRY_MS) {
     return;
   }
-  dataChecked.add(setCode);
+  dataChecked.set(setCode, Date.now());
   setStatus(`Updating ${setCode} stats`);
   const ok = readSettings().localBuild ? await runBuild(setCode) : await downloadHostedSet(setCode);
   statsCache.clear();
@@ -1232,6 +1257,11 @@ app.whenReady().then(() => {
   setInterval(() => void pollArena(), ARENA_POLL_MS);
   setTimeout(() => void refreshInBackground('app started'), REFRESH_FIRST_MS);
   setInterval(() => void refreshInBackground('every 6 hours'), REFRESH_EVERY_MS);
+  // 0.3.7: hosted stats are a tiny index check, so look every 15 minutes: new data reaches every
+  // overlay within 15 minutes of a site publish, no restart. (Local builds stay on the 6-hour cycle.)
+  setInterval(() => {
+    if (!readSettings().localBuild) void refreshHosted('every 15 minutes');
+  }, HOSTED_CHECK_MS);
 });
 
 // ---------- Sealed: build your pool in 24spells (2026-11-14) ----------
