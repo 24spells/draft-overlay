@@ -61,6 +61,11 @@ type Settings = {
   coachColors: boolean;
   /** After each pick: a chess-style grade, and the draft's running accuracy. */
   coachGrades: boolean;
+  /** 0.3.8 (Ken: "overlay often blocks visuals of cards"): compact = the grade and one number in the
+   * art's corner; full = the grade and all small stats across the card. */
+  plateStyle: 'compact' | 'full';
+  /** A stack row with the flow meter: which colors are reaching you more than usual (the trainer's). */
+  coachFlow: boolean;
 };
 
 const DEFAULTS: Settings = {
@@ -82,7 +87,23 @@ const DEFAULTS: Settings = {
   coachGaps: true,
   coachColors: true,
   coachGrades: true,
+  plateStyle: 'compact',
+  coachFlow: true,
 };
+
+/** Arena's enlarged card spans about this many card widths beside the hovered card (measured 2026-11-16). */
+const ZOOM_SPAN = 3.5;
+const FLOW_ORDER = ['W', 'U', 'B', 'R', 'G'] as const;
+const FLOW_NAMES: Record<string, string> = { W: 'White', U: 'Blue', B: 'Black', R: 'Red', G: 'Green' };
+const FLOW_FILL: Record<string, string> = { W: '#f3ecc8', U: '#6fb3e6', B: '#a99fa2', R: '#ef8a6b', G: '#73c48a' };
+/** Scores beyond this fill the bar; typical reads run about -1 to +1.5 (same as the trainer). */
+const FLOW_MAX = 1.5;
+/** How often a "flowing" color was truly open, from the trainer's simulated drafts (validate-flow.ts, 2026-11-11). */
+const FLOW_TRUST = [
+  'Pack 1 is an early read: colors marked flowing were truly open only a little more often than chance. Note it, do not commit to it.',
+  'In testing, colors marked flowing in pack 2 were truly open about two times in three.',
+  'In testing, colors marked flowing in pack 3 were truly open about three times in four (same neighbors as pack 1).',
+];
 
 const BADGE_GLYPH: Record<string, string> = { Best: '★', Excellent: '!', Good: '✓', Inaccuracy: '?!', Mistake: '?', Blunder: '??' };
 const BADGE_COLOR: Record<string, string> = { Best: '#81b64c', Excellent: '#5eb3a2', Good: '#95b776', Inaccuracy: '#f2c037', Mistake: '#ff9a47', Blunder: '#f2493a' };
@@ -313,6 +334,7 @@ export function mountOverlay(root: HTMLElement, api: OverlayApi): void {
   const coachButton = element('button', 'stack-row stack-button stats-toggle coach-toggle');
   const colorsRow = element('div', 'stack-row stack-info coach-colors');
   const gradeRow = element('div', 'stack-row stack-info coach-grade');
+  const flowRow = element('div', 'stack-row stack-info coach-flow');
   const toast = element('div', 'pick-toast');
   coachButton.title = "Outline the coach's top 3 picks, the same hint as on 24spells";
   const mainLabel = element('label', 'stack-row stack-select');
@@ -333,7 +355,7 @@ export function mountOverlay(root: HTMLElement, api: OverlayApi): void {
 
   mainLabel.append(element('span', 'stack-label', 'Show'), wrapSelect(mainSelect));
   deckLabel.append(element('span', 'stack-label', 'Compare'), wrapSelect(deckSelect));
-  stack.append(setInfo, statsButton, coachButton, colorsRow, gradeRow, mainLabel, deckLabel, reviewButton, settingsButton, foldButton);
+  stack.append(setInfo, statsButton, coachButton, colorsRow, flowRow, gradeRow, mainLabel, deckLabel, reviewButton, settingsButton, foldButton);
   controls.append(stack, panel, status, credit);
   root.append(plates, hoverPanel, controls, toast);
 
@@ -395,10 +417,11 @@ export function mountOverlay(root: HTMLElement, api: OverlayApi): void {
   }
 
   function buildPlate(entry: Omit<Placed, 'plate'>, scale: number): HTMLElement {
-    const plate = element('div', `plate ${gradeClass(entry.row)}`);
+    const compact = settings.plateStyle === 'compact';
+    const plate = element('div', `plate ${gradeClass(entry.row)}${compact ? ' compact' : ''}`);
     plate.style.left = `${entry.rect.left + entry.rect.width * 0.05}px`;
     plate.style.top = `${entry.rect.top + entry.rect.height * 0.13}px`;
-    plate.style.width = `${entry.rect.width * 0.9}px`;
+    if (!compact) plate.style.width = `${entry.rect.width * 0.9}px`;
     plate.style.setProperty('--u', `${scale}px`);
     if (entry.row?.lowSample && settings.lowSample === 'dim') {
       plate.classList.add('low-sample');
@@ -408,9 +431,9 @@ export function mountOverlay(root: HTMLElement, api: OverlayApi): void {
     const mainCell = element('div', main.wide ? 'main wide' : 'main', main.text);
     plate.append(mainCell);
 
-    const smalls = settings.small.filter(
-      (metric): metric is MetricId => metric !== 'none',
-    );
+    const smalls = settings.small
+      .filter((metric): metric is MetricId => metric !== 'none')
+      .slice(0, compact ? 1 : 3);
     if (smalls.length > 0) {
       const list = element('div', 'smalls');
       for (const metric of smalls) {
@@ -528,13 +551,46 @@ export function mountOverlay(root: HTMLElement, api: OverlayApi): void {
     }
   }
 
+  /**
+   * Where Arena draws its enlarged card for the hovered one (0.3.8, measured from a TRK draft at
+   * 3200x1800): beside the card, about 3.4 card widths wide, over both rows. Right of the card when
+   * there is room, else left (the flip side is an estimate until checked in a real draft).
+   */
+  function arenaZoom(rect: Placed['rect']): { left: number; right: number } {
+    const cw = rect.width;
+    const right = rect.left + rect.width;
+    return right + ZOOM_SPAN * cw <= window.innerWidth
+      ? { left: right, right: right + ZOOM_SPAN * cw }
+      : { left: rect.left - ZOOM_SPAN * cw, right: rect.left };
+  }
+
+  /** The hover panel beside Arena's enlarged card, on whichever side has more room, never over the hovered card. */
+  function placeHoverPanel(rect: Placed['rect']): void {
+    const zoom = arenaZoom(rect);
+    const lo = Math.min(zoom.left, rect.left);
+    const hi = Math.max(zoom.right, rect.left + rect.width);
+    const gap = 12;
+    const roomLeft = lo - gap - 8;
+    const roomRight = window.innerWidth - hi - gap - 8;
+    const ideal = Math.max(400, window.innerWidth * 0.29);
+    const left = roomLeft >= roomRight;
+    const width = Math.max(340, Math.min(ideal, left ? roomLeft : roomRight));
+    hoverPanel.style.width = `${width}px`;
+    hoverPanel.style.minWidth = '0';
+    hoverPanel.style.right = 'auto';
+    hoverPanel.style.left = `${left ? Math.max(8, lo - gap - width) : Math.min(window.innerWidth - width - 8, hi + gap)}px`;
+  }
+
   function renderHover(): void {
+    const zoom = hovered ? arenaZoom(hovered.rect) : null;
     for (const entry of placed) {
       const near =
         hovered !== null &&
         Math.abs(entry.column - hovered.column) <= 1 &&
         Math.abs(entry.rowIndex - hovered.rowIndex) <= 1;
-      entry.plate.classList.toggle('covered', near);
+      const underZoom =
+        zoom !== null && entry !== hovered && entry.rect.left < zoom.right && entry.rect.left + entry.rect.width > zoom.left;
+      entry.plate.classList.toggle('covered', near || underZoom);
     }
 
     hoverPanel.textContent = '';
@@ -542,6 +598,7 @@ export function mountOverlay(root: HTMLElement, api: OverlayApi): void {
     if (!hovered) {
       return;
     }
+    placeHoverPanel(hovered.rect);
 
     const row = hovered.row;
     const name = hovered.meta?.name ?? 'Unknown card';
@@ -835,6 +892,9 @@ export function mountOverlay(root: HTMLElement, api: OverlayApi): void {
     });
 
     const onCard = section('On the card', [
+      settingRow('Size', segmented(settings.plateStyle, [['compact', 'Compact'], ['full', 'Full']], (value) => {
+        settings.plateStyle = value as Settings['plateStyle'];
+      }), 'Compact: the grade and your first small stat, in the corner of the art. Full: every small stat across the card. Hover a card for all its numbers.'),
       settingRow('Main stat', styledSelect(settings.main, [['grade', 'Grade'], ...metricOptions], (value) => {
         settings.main = value as MainStat;
       }, metricTitles)),
@@ -892,6 +952,7 @@ export function mountOverlay(root: HTMLElement, api: OverlayApi): void {
       settingRow('Also show', toggles([
         ['coachGaps', 'Gaps', 'On ranked marks: win-rate points behind #1'],
         ['coachColors', 'Colors', 'Your likely colors in the stack'],
+        ['coachFlow', 'Flow', 'Which colors are reaching you more than usual (the 24spells flow meter)'],
         ['coachGrades', 'Grades', 'A grade after each pick, and your accuracy'],
       ])),
     ]);
@@ -1099,6 +1160,7 @@ export function mountOverlay(root: HTMLElement, api: OverlayApi): void {
       }
       colorsRow.title = 'Your likely colors, from your picks and what is flowing (24spells coach)';
     }
+    renderFlowRow(folded, inDraft);
     const results = grades.draftId === view?.draftId ? grades.results : [];
     const showGrade = inDraft && settings.coachGrades && results.length > 0;
     gradeRow.hidden = folded || !showGrade;
@@ -1112,6 +1174,54 @@ export function mountOverlay(root: HTMLElement, api: OverlayApi): void {
       gradeRow.append(lastSpan);
       gradeRow.title = 'Chess-style grades vs the coach, like the 24spells draft review';
     }
+  }
+
+  /**
+   * The flow meter (0.3.8, Ken: "also add flow"): the trainer's read, one bar per color, up when more
+   * good cards of that color reach you than usual at these picks, down when fewer.
+   */
+  function renderFlowRow(folded: boolean, inDraft: boolean): void {
+    const flow = coachView?.input?.flow;
+    const show = inDraft && settings.coachFlow && Boolean(flow) && Boolean(view);
+    flowRow.hidden = folded || !show;
+    if (!show || !flow || !view) return;
+    const from = view.packNumber === 2 ? 'left' : 'right';
+    flowRow.textContent = '';
+    const top = element('div', 'flow-top');
+    top.append(element('span', 'flow-cap', 'Flow'));
+    const bars = element('span', 'flow-bars');
+    for (const c of FLOW_ORDER) {
+      const score = flow[c] ?? 0;
+      const h = (Math.min(FLOW_MAX, Math.abs(score)) / FLOW_MAX) * 100;
+      const col = element('span', 'flow-col');
+      const up = element('span', 'flow-up');
+      const down = element('span', 'flow-down');
+      const fillUp = element('i');
+      const fillDown = element('i');
+      fillUp.style.height = `${score > 0 ? h : 0}%`;
+      fillDown.style.height = `${score < 0 ? h : 0}%`;
+      fillUp.style.background = FLOW_FILL[c];
+      fillDown.style.background = FLOW_FILL[c];
+      up.append(fillUp);
+      down.append(fillDown);
+      col.append(up, down, element('b', undefined, c));
+      bars.append(col);
+    }
+    top.append(bars);
+    flowRow.append(top);
+    const flowing = FLOW_ORDER.filter((c) => (flow[c] ?? 0) >= 1).sort((a, b) => flow[b] - flow[a]);
+    const dry = FLOW_ORDER.filter((c) => (flow[c] ?? 0) <= -1);
+    const text =
+      view.pickNumber <= 2
+        ? 'Too early to read'
+        : flowing.length
+          ? `${flowing.map((c) => FLOW_NAMES[c]).join(', ')} flowing`
+          : dry.length
+            ? `${dry.map((c) => FLOW_NAMES[c]).join(', ')} drying up`
+            : 'Nothing stands out yet';
+    flowRow.append(element('span', 'coach-row-sub', `${text} · from your ${from}`));
+    flowRow.classList.toggle('early', view.packNumber === 1);
+    flowRow.title = FLOW_TRUST[Math.min(2, Math.max(0, view.packNumber - 1))];
   }
 
   /** Loads the trainer's coach for a set once, then redraws with the outlines. */

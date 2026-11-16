@@ -26,6 +26,27 @@
   transition: opacity 90ms ease;
 }
 
+/* Compact (0.3.8, default): the grade and one number in the art's corner. */
+.plate.compact .main {
+  flex-basis: calc(var(--u) * 34);
+  padding: calc(var(--u) * 3) 0;
+  font-size: calc(var(--u) * 17);
+}
+
+.plate.compact .small {
+  flex-direction: row;
+  gap: calc(var(--u) * 3);
+  padding: 0 calc(var(--u) * 6);
+}
+
+.plate.compact .small-value {
+  font-size: calc(var(--u) * 13);
+}
+
+.plate.compact .small-label {
+  font-size: calc(var(--u) * 8);
+}
+
 .plate.covered {
   opacity: 0;
 }
@@ -922,4 +943,73 @@
 }
 .review-button:hover {
   background: #348474;
+}
+
+/* The flow meter row (0.3.8): the trainer's bars, one per color, up = flowing, down = drying up. */
+.coach-flow {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  white-space: normal;
+  line-height: 1.2;
+}
+
+.flow-top {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.flow-cap {
+  font-weight: 700;
+}
+
+.flow-bars {
+  display: flex;
+  gap: 6px;
+}
+
+.flow-col {
+  display: grid;
+  grid-template-rows: 20px 20px auto;
+  width: 18px;
+  justify-items: center;
+}
+
+.flow-up,
+.flow-down {
+  position: relative;
+  width: 100%;
+  background: rgb(0 0 0 / 7%);
+}
+
+.flow-up {
+  border-bottom: 2px solid rgb(0 0 0 / 45%);
+}
+
+.flow-up i,
+.flow-down i {
+  position: absolute;
+  left: 0;
+  width: 100%;
+  box-shadow: inset 0 0 0 1px rgb(0 0 0 / 35%);
+}
+
+.flow-up i {
+  bottom: 0;
+}
+
+.flow-down i {
+  top: 0;
+  opacity: 0.55;
+}
+
+.flow-col b {
+  margin-top: 2px;
+  font-size: 10px;
+  opacity: 0.75;
+}
+
+.coach-flow.early .flow-bars {
+  opacity: 0.6;
 }
