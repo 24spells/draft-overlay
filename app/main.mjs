@@ -1154,9 +1154,21 @@ function maybeAutoInstall() {
 let needsUpdate = null;
 const UPDATE_EVERY_MS = 6 * 60 * 60 * 1000;
 
+/** What the last update check found, for the tray: null (none yet), 'checking', 'latest', 'failed', or a version downloading. */
+let updateCheck = null;
+const RETRY_FAILED_MS = 10 * 60 * 1000;
+
 function updateMenu() {
   const items = [];
   if (updateReady) items.push({ label: `Restart to update to ${updateReady}`, click: () => installUpdate() });
+  else if (updater) {
+    if (updateCheck === 'checking') items.push({ label: 'Checking for updates...', enabled: false });
+    else if (updateCheck && !['latest', 'failed'].includes(updateCheck)) items.push({ label: `Downloading ${updateCheck}...`, enabled: false });
+    else {
+      const label = updateCheck === 'latest' ? 'Up to date (check again)' : updateCheck === 'failed' ? 'Update check failed: try again' : 'Check for updates';
+      items.push({ label, click: () => checkNow(true) });
+    }
+  }
   if (needsUpdate) items.push({ label: `Update needed: get version ${needsUpdate}`, click: () => void shell.openExternal(`${SITE}/#overlay`) });
   return items;
 }
@@ -1184,10 +1196,33 @@ function startUpdater() {
   }
   updater.autoDownload = true;
   updater.autoInstallOnAppQuit = true;
-  updater.on('error', (error) => logData(`update: ${error?.message ?? error}`));
-  updater.on('update-available', (info) => logData(`update: ${info.version} available, downloading`));
+  updater.on('error', (error) => {
+    logData(`update: ${error?.message ?? error}`);
+    updateCheck = 'failed';
+    refreshTray();
+    // A failed download (a network blip) tries again in 10 minutes, not in 6 hours.
+    clearTimeout(retryTimer);
+    retryTimer = setTimeout(() => checkNow(false), RETRY_FAILED_MS);
+  });
+  updater.on('checking-for-update', () => {
+    updateCheck = 'checking';
+    refreshTray();
+  });
+  updater.on('update-not-available', () => {
+    updateCheck = 'latest';
+    refreshTray();
+    if (manualCheck && Notification.isSupported()) new Notification({ title: 'Draft Overlay is up to date', body: `You have the latest version, ${app.getVersion()}.` }).show();
+    manualCheck = false;
+  });
+  updater.on('update-available', (info) => {
+    logData(`update: ${info.version} available, downloading`);
+    updateCheck = info.version;
+    manualCheck = false;
+    refreshTray();
+  });
   updater.on('update-downloaded', (info) => {
     updateReady = info.version;
+    updateCheck = null;
     logData(`update: ${info.version} ready`);
     refreshTray();
     if (Notification.isSupported()) {
@@ -1197,12 +1232,26 @@ function startUpdater() {
     }
     maybeAutoInstall();
   });
-  const check = () => {
-    if (drafting()) return; // never mid-draft
-    updater.checkForUpdates().catch((error) => logData(`update: check failed: ${error?.message ?? error}`));
-  };
-  setTimeout(check, 60 * 1000);
-  setInterval(check, UPDATE_EVERY_MS);
+  setTimeout(() => checkNow(false), 60 * 1000);
+  setInterval(() => checkNow(false), UPDATE_EVERY_MS);
+}
+
+let retryTimer = null;
+let manualCheck = false;
+
+/** Look for a new version. Automatic checks skip drafts; the tray's "Check for updates" always runs (it only downloads; installing waits for a restart or for Arena to close). */
+function checkNow(manual) {
+  if (!updater || updateReady || updateCheck === 'checking') return;
+  if (!manual && drafting()) return; // never mid-draft
+  manualCheck = manual;
+  if (manual) logData('update: checking (from the tray)');
+  updater.checkForUpdates().catch((error) => {
+    logData(`update: check failed: ${error?.message ?? error}`);
+    if (updateCheck === 'checking') {
+      updateCheck = 'failed';
+      refreshTray();
+    }
+  });
 }
 
 /** "1.10.0" > "1.9.2". */
