@@ -11,7 +11,15 @@ export type MullPrompt = {
   onPlay: boolean;
   /** 1 = the first seven. The model only reads first sevens. */
   prompt: number;
+  /**
+   * Basic lands this log has shown (grpId -> W/U/B/R/G), from the cards' own types. Arena's newest basics
+   * (e.g. 106895 Plains, Nov 2026) are in no card list yet, so the model alone counted them as unknown
+   * spells: Ken's 3-land hand read as a 1-lander (2026-11-17).
+   */
+  basics: Record<string, string>;
 };
+
+const BASIC_COLOR: Record<string, string> = { SubType_Plains: 'W', SubType_Island: 'U', SubType_Swamp: 'B', SubType_Mountain: 'R', SubType_Forest: 'G' };
 
 export type MullEvent = { kind: 'prompt'; data: MullPrompt } | { kind: 'clear' };
 
@@ -36,6 +44,8 @@ export function setFromEvent(event: string | null): string | null {
 export function createMullWatcher(onEvent: (e: MullEvent) => void) {
   let seat: number | null = null;
   let deck: number[] = [];
+  /** Kept across games: the same printing comes back game after game. */
+  const basics: Record<string, string> = {};
   let active: number | null = null;
   let gameId: string | null = null;
   let prompts = 0;
@@ -83,7 +93,14 @@ export function createMullWatcher(onEvent: (e: MullEvent) => void) {
           }
         }
         for (const z of gs.zones ?? []) zones.set(z.zoneId, { type: z.type, owner: z.ownerSeatId ?? null, ids: z.objectInstanceIds ?? [] });
-        for (const o of gs.gameObjects ?? []) if (typeof o.grpId === 'number') objects.set(o.instanceId, o.grpId);
+        for (const o of gs.gameObjects ?? []) {
+          if (typeof o.grpId !== 'number') continue;
+          objects.set(o.instanceId, o.grpId);
+          if ((o.superTypes ?? []).includes('SuperType_Basic')) {
+            const c = (o.subtypes ?? []).map((t: string) => BASIC_COLOR[t]).find(Boolean);
+            if (c) basics[String(o.grpId)] = c;
+          }
+        }
         const ti = gs.turnInfo;
         if (ti && typeof ti.activePlayer === 'number') active = ti.activePlayer;
         // The game has started (turn 1) or ended: the decision is made.
@@ -96,7 +113,7 @@ export function createMullWatcher(onEvent: (e: MullEvent) => void) {
         showing = true;
         onEvent({
           kind: 'prompt',
-          data: { gameId, set: setFromEvent(matchId ? eventOfMatch.get(matchId) ?? null : null), hand, deck: [...deck], onPlay: active === seat, prompt: prompts },
+          data: { gameId, set: setFromEvent(matchId ? eventOfMatch.get(matchId) ?? null : null), hand, deck: [...deck], onPlay: active === seat, prompt: prompts, basics: { ...basics } },
         });
       }
     }

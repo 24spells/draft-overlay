@@ -109,4 +109,6 @@ export type ReviewData = {
   setCode: string | null;
   format: DraftFormat | null;
   picks: { pack: number; pick: number; cards: number[]; taken: number | null }[];
+  /** 0.3.14: the 40 you submitted after this draft, as [arena id, copies]; null until you build it. */
+  deck?: [number, number][] | null;
 };

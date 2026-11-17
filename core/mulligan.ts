@@ -69,19 +69,43 @@ function castable(c: MullCard, lands: MullCard[], budget: number): boolean {
 }
 
 /** All features the models use, by name (a model reads the ones it was trained on). */
-export function mullFeatures(model: MullModel, hand: number[], deck: number[], onPlay: boolean, skill: number): {
+/**
+ * Basic lands by printing, for ids no card list has yet (Arena's Nov 2026 basics, seen in Ken's logs).
+ * The game log also names basics as they appear (mull-live.ts); both feed basicFacts.
+ */
+export const KNOWN_BASICS: Record<string, string> = {
+  '106895': 'W', '106897': 'U', '106899': 'B', '106901': 'R', '106903': 'G',
+  '106531': 'B', '106533': 'R', '96180': 'W', '96182': 'U', '96185': 'B', '96188': 'R', '96191': 'G',
+};
+const MASK: Record<string, number> = { W: 1, U: 2, B: 4, R: 8, G: 16 };
+
+/** A basic land's facts: copied from a basic of that color the model knows, else built plainly. */
+function basicFacts(model: MullModel, color: string, basics: Record<string, string>): MullCard {
+  for (const [id, c] of Object.entries({ ...KNOWN_BASICS, ...basics })) {
+    if (c === color && model.cards[id]?.[0]) return model.cards[id];
+  }
+  return [1, MASK[color] ?? 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0];
+}
+
+export function mullFeatures(model: MullModel, hand: number[], deck: number[], onPlay: boolean, skill: number, basics: Record<string, string> = {}): {
   x: Record<string, number>;
   unknown: number;
 } {
   let unknown = 0;
-  const look = (id: number): MullCard => {
+  const find = (id: number): MullCard | undefined => {
     const c = model.cards[String(id)];
+    if (c) return c;
+    const color = basics[String(id)] ?? KNOWN_BASICS[String(id)];
+    return color ? basicFacts(model, color, basics) : undefined;
+  };
+  const look = (id: number): MullCard => {
+    const c = find(id);
     if (!c) unknown++;
     return c ?? FALLBACK;
   };
   const h = hand.map(look);
   const known = unknown;
-  const d = deck.map((id) => model.cards[String(id)] ?? FALLBACK);
+  const d = deck.map((id) => find(id) ?? FALLBACK);
   unknown = known;
   const lands = h.filter((c) => c[0]);
   const sp = h.filter((c) => !c[0]);
@@ -131,8 +155,8 @@ export function predict(b: MullBooster, x: Record<string, number>): number {
 }
 
 /** The read for the first seven at the mulligan prompt. */
-export function mullRead(model: MullModel, hand: number[], deck: number[], onPlay: boolean, skill = 0.55): MullRead {
-  const { x, unknown } = mullFeatures(model, hand, deck, onPlay, skill);
+export function mullRead(model: MullModel, hand: number[], deck: number[], onPlay: boolean, skill = 0.55, basics: Record<string, string> = {}): MullRead {
+  const { x, unknown } = mullFeatures(model, hand, deck, onPlay, skill, basics);
   const thin = model.thinLands.includes(x.lands7);
   return {
     keep: thin ? null : predict(model.keep, x),

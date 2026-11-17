@@ -89,7 +89,7 @@ export function mountMullPlate(root: HTMLElement, api: OverlayApi): void {
         plate.hidden = true;
         return;
       }
-      render(mullRead(model, hand, deck, onPlay), set, onPlay, model);
+      render(mullRead(model, hand, deck, onPlay, undefined, e.data.basics ?? {}), set, onPlay, model);
     });
   });
 }

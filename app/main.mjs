@@ -42,7 +42,7 @@ import { DraftTracker, parseLogLine } from './build/core/log-parser.js';
 import { LogWatcher } from './build/core/log-watcher.js';
 import { createArenaRecorder } from './arena-sync.mjs';
 import { SITE } from './site.mjs';
-import { readArenaLog } from './build/core/arena-records.js';
+import { readArenaLog, submittedDeck } from './build/core/arena-records.js';
 import { createMullWatcher } from './build/core/mull-live.js';
 import { gunzipSync } from 'node:zlib';
 import { createRequire } from 'node:module';
@@ -1434,7 +1434,14 @@ ipcMain.handle('overlay:review', async () => {
   let draftId = null;
   let current = null;
   let picks = [];
+  /** 0.3.14: the 40 you submitted after this draft (Arena's deck builder), once you have built it. */
+  let deck = null;
   for (const line of text.split('\n')) {
+    if (line.includes('==> EventSetDeck')) {
+      const sub = submittedDeck(line);
+      if (sub && picks.length) deck = sub.deck;
+      continue;
+    }
     const event = parseLogLine(line);
     if (!event) continue;
     if (event.type === 'joined') {
@@ -1443,6 +1450,7 @@ ipcMain.handle('overlay:review', async () => {
     } else if (event.type === 'pack') {
       if ((event.draftId && event.draftId !== draftId) || (event.packNumber === 1 && event.pickNumber === 1)) {
         picks = [];
+        deck = null;
         draftId = event.draftId ?? draftId;
       }
       setCode = event.setCode ?? setCode;
@@ -1453,7 +1461,7 @@ ipcMain.handle('overlay:review', async () => {
       current = null;
     }
   }
-  return picks.length ? { setCode, format, picks } : null;
+  return picks.length ? { setCode, format, picks, deck } : null;
 });
 
 // The newest recorded run, opened on 24spells (works after Arena replaced its log).

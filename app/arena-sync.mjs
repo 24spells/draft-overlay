@@ -66,7 +66,7 @@ export function createArenaRecorder({ userDir, logPath, namesFor, onChange = () 
   }
 
   function idsOf(rec) {
-    if (rec.kind === 'draft') return rec.picks.flatMap((p) => [...p.shown, p.taken ?? 0]);
+    if (rec.kind === 'draft') return [...rec.picks.flatMap((p) => [...p.shown, p.taken ?? 0]), ...(rec.deck ?? []).map(([id]) => id)];
     return [...rec.deck, ...rec.side, ...rec.hands.flat(), ...rec.kept, ...rec.oppSeen, ...rec.stuck,
       ...rec.turns.flatMap((t) => [...t.drew, ...(t.toHand ?? []), ...t.cast, ...t.oppCast, t.land ?? 0])];
   }

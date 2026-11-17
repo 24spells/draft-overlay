@@ -23,6 +23,11 @@ export type ArenaDraftRecord = {
   format: string | null;
   at: number | null;
   picks: ArenaPick[];
+  /**
+   * 0.3.14: the 40 you submitted in Arena's deck builder (EventSetDeckV3), as [arena id, copies].
+   * Known before any game, so 24spells can open your draft with your deck (thatdoug 2026-11-17).
+   */
+  deck?: [number, number][] | null;
   /** Arena's own record for the course, when the log shows it. */
   wins: number | null;
   losses: number | null;
@@ -130,6 +135,24 @@ function jsonFrom(line: string, from = 0): Record<string, unknown> | null {
 }
 
 const num = (v: unknown): number | null => (typeof v === 'number' && Number.isFinite(v) ? v : typeof v === 'string' && /^\d+$/.test(v) ? Number(v) : null);
+
+/** The main deck from an EventSetDeckV3 request line (the deck you submit in Arena's deck builder). */
+export function submittedDeck(line: string): { event: string; deck: [number, number][] } | null {
+  try {
+    const at = line.indexOf('{');
+    if (at < 0) return null;
+    const outer = JSON.parse(line.slice(at)) as Record<string, unknown>;
+    const req = typeof outer.request === 'string' ? (JSON.parse(outer.request) as Record<string, any>) : null;
+    const main = req?.Deck?.MainDeck;
+    if (typeof req?.EventName !== 'string' || !Array.isArray(main)) return null;
+    const deck = main
+      .map((c: Record<string, unknown>) => [Number(c.cardId), Number(c.quantity)] as [number, number])
+      .filter(([id, n]) => id > 0 && n > 0);
+    return deck.length ? { event: req.EventName, deck } : null;
+  } catch {
+    return null;
+  }
+}
 
 export function readArenaLog(text: string): ArenaRecords {
   const drafts = new Map<string, ArenaDraftRecord>();
@@ -269,6 +292,15 @@ export function readArenaLog(text: string): ArenaRecords {
           drafts.set(id, draft);
         }
         pending = { pack, pick, shown: cards };
+      }
+      continue;
+    }
+    if (line.includes('==> EventSetDeck')) {
+      const main = submittedDeck(line);
+      if (main) {
+        // The newest draft of that event: Arena names the event, not the draft.
+        const target = [...drafts.values()].reverse().find((d) => d.event === main.event) ?? null;
+        if (target) target.deck = main.deck;
       }
       continue;
     }
