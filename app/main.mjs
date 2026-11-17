@@ -774,14 +774,14 @@ async function fetchCoachFile(name) {
 }
 
 async function downloadCoach(setCode) {
-  const [set, flow, builds, splash] = await Promise.all(
-    [`${setCode}.json`, `${setCode}-flow.json`, `${setCode}-builds.json`, `${setCode}-splash.json`].map(fetchCoachFile),
+  const [set, flow, builds, splash, statline] = await Promise.all(
+    [`${setCode}.json`, `${setCode}-flow.json`, `${setCode}-builds.json`, `${setCode}-splash.json`, `${setCode}-statline.json`].map(fetchCoachFile),
   );
   if (!set?.cards || !set?.stats) {
     logData(`coach ${setCode}: not on the trainer site (or offline)`);
     return null;
   }
-  const data = { set, flow, builds, splash };
+  const data = { set, flow, builds, splash, statline };
   mkdirSync(COACH_DIR, { recursive: true });
   writeFileSync(path.join(COACH_DIR, `${setCode}.json`), JSON.stringify({ fetched: Date.now(), ...data }));
   coachCache.set(setCode, data);
@@ -808,7 +808,8 @@ ipcMain.handle('overlay:coach', async (_event, setCode) => {
     try {
       const { fetched, ...data } = JSON.parse(readFileSync(file, 'utf8'));
       coachCache.set(setCode, data);
-      if (Date.now() - fetched > COACH_MAX_AGE_MS) {
+      // Files cached before 0.3.12 have no slash line (fast vs slow games): fetch again now, not in a day.
+      if (Date.now() - fetched > COACH_MAX_AGE_MS || !('statline' in data)) {
         void refreshCoach(setCode);
       }
       return data;

@@ -59,7 +59,12 @@ export type LoadedStats = { stats: SetStats; note: string | null };
  * the measured deck-shape prices, and what is worth splashing per color pair.
  * Flow, prices and splash data may be missing (new sets).
  */
-export type CoachData = { set: unknown; flow: unknown | null; builds: unknown | null; splash?: unknown | null };
+/** statline: the card slash line from 24spells (sets/<SET>-statline.json): lean (fast vs slow games) and Lift when cast. */
+export type CoachData = { set: unknown; flow: unknown | null; builds: unknown | null; splash?: unknown | null; statline?: StatLineFile | null };
+
+/** The site's src/lib/statline.ts file shape (only what the hover reads). */
+export type StatLine = { wpa?: number; wpaP?: number; lean?: number };
+export type StatLineFile = { set: string; replay: boolean; stats: Record<string, StatLine> };
 
 /** Everything the overlay needs from its host: the real app or the preview. */
 export type OverlayApi = {

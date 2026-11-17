@@ -30,6 +30,7 @@ import type {
   DraftView,
   LoadedStats,
   OverlayApi,
+  StatLineFile,
 } from '../core/types.ts';
 
 type MainStat = MetricId | 'grade';
@@ -230,17 +231,53 @@ function percentileColor(pct: number): string {
   return `rgb(${PCT_SCALE[PCT_SCALE.length - 1][1].join(' ')})`;
 }
 
-const PERFORMANCE: { metric: MetricId; label: string }[] = [
+// The site's CardStats (2026-11-16 redesign): sub-labels, no "In the deck", Lift when cast, one draft-demand row.
+const PERFORMANCE: { metric: MetricId; label: string; sub?: string }[] = [
   { metric: 'gih', label: 'When in hand' },
-  { metric: 'oh', label: 'In opening hand' },
-  { metric: 'gd', label: 'Drawn later' },
-  { metric: 'gp', label: 'In the deck' },
+  { metric: 'oh', label: 'In opening hand', sub: 'keep value' },
+  { metric: 'gd', label: 'Drawn later', sub: 'top-deck value' },
   { metric: 'iwd', label: 'Lift when drawn' },
 ];
-const DEMAND: { metric: MetricId; label: string }[] = [
-  { metric: 'ata', label: 'Taken at' },
-  { metric: 'alsa', label: 'Last seen at' },
-];
+
+const signed = (x: number) => `${x > 0 ? '+' : ''}${x.toFixed(1)}`;
+
+/** "Plays best in": fast games on the left, slow on the right; 12 points of lean reaches the end (the site's slider). */
+function leanBlock(lean: number | undefined, why: string | null): HTMLElement {
+  const side = lean === undefined ? null : Math.abs(lean) < 2 ? 'any' : lean > 0 ? 'aggro' : 'control';
+  const block = element('div', side === null ? 'lean empty' : 'lean');
+  if (side) block.dataset.side = side;
+  const head = element('div', 'lean-head');
+  head.append(element('span', undefined, 'Plays best in'), element('strong', undefined, side === null ? '-' : side === 'any' ? 'Any game speed' : side === 'aggro' ? 'Fast games' : 'Slow games'));
+  const rail = element('div', 'lean-rail');
+  if (lean !== undefined) {
+    const at = Math.max(4, Math.min(96, 50 - (lean / 12) * 46));
+    const fill = element('span', 'lean-fill');
+    fill.style.left = `${Math.min(50, at)}%`;
+    fill.style.width = `${Math.abs(at - 50)}%`;
+    const thumb = element('span', 'lean-thumb');
+    thumb.style.left = `${at}%`;
+    rail.append(fill, element('span', 'lean-center'), thumb);
+  } else rail.append(element('span', 'lean-center'));
+  const ends = element('div', 'lean-ends');
+  ends.append(element('span', undefined, 'Fast'), element('span', undefined, 'Any'), element('span', undefined, 'Slow'));
+  block.append(head, rail, ends);
+  if (side === null && why) block.append(element('small', 'lean-why', why));
+  return block;
+}
+
+/** "Taken around": where drafters take it, on a pick 1 to 14 scale (its price, not its quality). */
+function pickRow(label: string, value: number | null): HTMLElement {
+  const row = element('div', 'pick-row');
+  const rail = element('div', 'pick-rail');
+  if (value !== null) {
+    const mark = element('span', 'pick-mark');
+    mark.style.left = `${Math.max(0, Math.min(100, ((value - 1) / 13) * 100))}%`;
+    rail.append(mark);
+  }
+  rail.append(element('small', 'p1', '1'), element('small', 'p14', '14'));
+  row.append(element('span', 'sb-label', label), rail, element('span', 'sb-value', value === null ? '-' : `pick ${value.toFixed(1)}`));
+  return row;
+}
 
 function statValue(metric: MetricId, value: number | null): string {
   if (value === null) return '-';
@@ -250,7 +287,7 @@ function statValue(metric: MetricId, value: number | null): string {
 }
 
 /** One Savant-style row: label, a percentile track with a colored dot, value (the site's StatBar). */
-function statBar(label: string, value: string, pct: number | null, dim: boolean): HTMLElement {
+function statBar(label: string, value: string, pct: number | null, dim: boolean, sub?: string): HTMLElement {
   const bar = element('div', dim ? 'sb-row dim' : 'sb-row');
   const track = element('div', 'sb-track');
   if (pct !== null) {
@@ -263,7 +300,9 @@ function statBar(label: string, value: string, pct: number | null, dim: boolean)
     dot.style.background = color;
     track.append(fill, dot);
   }
-  bar.append(element('span', 'sb-label', label), track, element('span', 'sb-value', value));
+  const labelEl = element('span', 'sb-label', label);
+  if (sub) labelEl.append(element('small', 'sb-sub', sub));
+  bar.append(labelEl, track, element('span', 'sb-value', value));
   return bar;
 }
 
@@ -316,6 +355,9 @@ export function mountOverlay(root: HTMLElement, api: OverlayApi): void {
   /** The web trainer's coach for the set in front of you (null until loaded, or if the site has no such set). */
   let coach: Coach | null = null;
   let coachFor = '';
+  /** The set's slash line (fast vs slow games, Lift when cast): null = not loaded, false = 24spells has none. */
+  let statline: StatLineFile | false | null = null;
+  let statlineFor = '';
   /** Arena card id -> the coach's rank for it (1 = best) and points behind #1, for the pack on screen. */
   let coachTop = new Map<number, { rank: number; gap: number }>();
   let coachView: CoachRead | null = null;
@@ -633,14 +675,18 @@ export function mountOverlay(root: HTMLElement, api: OverlayApi): void {
     hoverPanel.append(head);
 
     if (row) {
+      // The slash line: null while the set's file loads, false when 24spells has none for this set yet.
+      const lines = statlineFor === setCode ? statline : null;
+      const sl = lines ? lines.stats[name] : undefined;
+      hoverPanel.append(leanBlock(sl?.lean, lines === false ? `No ${setCode} game data yet` : lines ? 'Too few games to tell' : null));
       hoverPanel.append(sectionHead('Performance', `percentile vs ${setCode}`));
       for (const line of PERFORMANCE) {
-        hoverPanel.append(statBar(line.label, statValue(line.metric, row.values[line.metric]), pcts?.[line.metric] ?? null, row.lowSample));
+        hoverPanel.append(statBar(line.label, statValue(line.metric, row.values[line.metric]), pcts?.[line.metric] ?? null, row.lowSample, line.sub));
       }
-      hoverPanel.append(sectionHead('Draft demand', 'how early players take it'));
-      for (const line of DEMAND) {
-        hoverPanel.append(statBar(line.label, statValue(line.metric, row.values[line.metric]), pcts?.[line.metric] ?? null, false));
-      }
+      if (sl?.wpa !== undefined) hoverPanel.append(statBar('Lift when cast', `${signed(sl.wpa)} pts`, sl.wpaP ?? null, false, 'vs an ordinary turn'));
+      else hoverPanel.append(statBar('Lift when cast', '-', null, true, lines === false ? `no ${setCode} replay data yet` : 'vs an ordinary turn'));
+      hoverPanel.append(sectionHead('Draft demand', 'its price, not its quality'));
+      hoverPanel.append(pickRow('Taken around', row.values.ata));
     } else {
       hoverPanel.append(element('p', 'hover-note', '17Lands has no stats for this card.'));
     }
@@ -678,7 +724,7 @@ export function mountOverlay(root: HTMLElement, api: OverlayApi): void {
     }
     if (facts) {
       // Left out, as on the site: Keywords (printed on the card), Sample (said above), and Decks when Colors shows it pair by pair.
-      for (const l of factLines(facts, setCode).filter((l) => l.label !== 'Keywords' && l.label !== 'Sample' && !(l.label === 'Decks' && pairs.length > 1))) {
+      for (const l of factLines(facts, setCode).filter((l) => l.label !== 'Keywords' && l.label !== 'Sample' && l.label !== 'Decks')) {
         noteRow(l.label, l.text);
       }
     }
@@ -1272,10 +1318,13 @@ export function mountOverlay(root: HTMLElement, api: OverlayApi): void {
   async function loadCoach(setCode: string): Promise<void> {
     coachFor = setCode;
     coach = null;
+    statline = null;
+    statlineFor = setCode;
     const data = await api.getCoachData?.(setCode).catch(() => null);
     if (coachFor !== setCode) {
       return;
     }
+    statline = data?.statline?.stats ? data.statline : false;
     try {
       coach = data ? createCoach(data) : null;
     } catch (error) {

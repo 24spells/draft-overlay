@@ -40,7 +40,7 @@ createServer(async (request, response) => {
       response.writeHead(body ? 200 : 404, { 'Content-Type': TYPES['.json'], 'Cache-Control': 'no-store' }).end(body ?? 'null');
       return;
     }
-    const coachFile = url.pathname.match(/^\/coach-data\/([A-Z0-9]{2,5}(?:-flow|-builds|-splash)?\.json)$/);
+    const coachFile = url.pathname.match(/^\/coach-data\/([A-Z0-9]{2,5}(?:-flow|-builds|-splash|-statline)?\.json)$/);
     if (coachFile) {
       const upstream = await fetch(`${COACH_SITE}/${coachFile[1]}`).catch(() => null);
       const json = upstream?.ok && (upstream.headers.get('content-type') ?? '').includes('json');

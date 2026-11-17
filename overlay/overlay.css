@@ -1321,3 +1321,138 @@
 .mull-cell span { margin-top: 2px; font-size: 12px; font-weight: 600; color: #ecedf0; }
 .mull-cell small { font-size: 11px; color: #767c88; }
 .mull-foot { margin-top: 9px; font-size: 10.5px; line-height: 1.4; color: #767c88; }
+
+/* 0.3.12: the site's CardStats redesign in the hover (fast vs slow slider, sub-labels, Taken around). */
+.sb-sub {
+  display: block;
+  margin-top: 0.15em;
+  color: #767c88;
+  font-size: 0.78em;
+}
+
+.lean {
+  --aggro: #cc7038;
+  --control: #4f9bd4;
+  --side: #767c88;
+  margin: 0.9em 0 0.2em;
+  padding: 0.7em 0.85em 0.6em;
+  border-radius: 0.6em;
+  background: #2b2f37;
+}
+
+.lean[data-side='aggro'] { --side: var(--aggro); }
+.lean[data-side='control'] { --side: var(--control); }
+.lean.empty { opacity: 0.55; }
+
+.lean-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: 0.6em;
+  margin-bottom: 0.7em;
+}
+
+.lean-head span {
+  color: #a3a8b3;
+  font-size: 0.74em;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
+.lean-head strong {
+  color: #ecedf0;
+  font-size: 1em;
+}
+
+.lean-rail {
+  position: relative;
+  height: 0.5em;
+  margin: 0 0.6em;
+  border-radius: 999px;
+  background: linear-gradient(90deg, color-mix(in srgb, var(--aggro) 30%, #20232a), #20232a 50%, color-mix(in srgb, var(--control) 30%, #20232a));
+}
+
+.lean.empty .lean-rail { background: #2b2f37; }
+
+.lean-fill {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  border-radius: 999px;
+  background: var(--side);
+}
+
+.lean-center {
+  position: absolute;
+  top: -0.25em;
+  bottom: -0.25em;
+  left: 50%;
+  width: 2px;
+  margin-left: -1px;
+  border-radius: 1px;
+  background: #767c88;
+}
+
+.lean-thumb {
+  position: absolute;
+  top: 50%;
+  width: 1.25em;
+  height: 1.25em;
+  box-sizing: border-box;
+  border: 0.25em solid var(--side);
+  border-radius: 50%;
+  background: #20232a;
+  box-shadow: 0 1px 4px rgb(0 0 0 / 35%);
+  transform: translate(-50%, -50%);
+}
+
+.lean-ends {
+  display: flex;
+  justify-content: space-between;
+  margin-top: 0.5em;
+  color: #a3a8b3;
+  font-size: 0.74em;
+}
+
+.lean-why {
+  display: block;
+  margin-top: 0.4em;
+  color: #767c88;
+  font-size: 0.7em;
+}
+
+.pick-row {
+  display: grid;
+  grid-template-columns: minmax(6.5em, 36%) 1fr 4.6em;
+  align-items: center;
+  gap: 0.7em;
+  min-height: 2.15em;
+}
+
+.pick-rail {
+  position: relative;
+  height: 0.25em;
+  margin: 0 0.9em 0.6em;
+  border-radius: 999px;
+  background: #2b2f37;
+}
+
+.pick-mark {
+  position: absolute;
+  top: 50%;
+  width: 0.75em;
+  height: 0.75em;
+  border-radius: 50%;
+  background: #a3a8b3;
+  transform: translate(-50%, -50%);
+}
+
+.pick-rail small {
+  position: absolute;
+  top: 0.55em;
+  color: #767c88;
+  font-size: 0.62em;
+}
+
+.pick-rail .p1 { left: 0; transform: translateX(-50%); }
+.pick-rail .p14 { right: 0; transform: translateX(50%); }
