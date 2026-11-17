@@ -142,6 +142,36 @@ async function buildEarly() {
     const alsa = r.avg_seen ?? 0;
     picks.push(ata || alsa ? [round2(ata), ata ? (r.pick_count ?? 1) : 0, round2(alsa), alsa ? (r.seen_count ?? 1) : 0] : 0);
   }
+  // Color pairs (2026-11-16, Ken: "push up all the trek data we have"): the same endpoint filtered by deck
+  // colors, one call per pair, spaced out. Fills the card sheet's Colors row before the public files land.
+  const blockOf = (r) => {
+    const b = [
+      ...pair(r.opening_hand_game_count, r.opening_hand_win_rate),
+      ...pair(r.drawn_game_count, r.drawn_win_rate),
+      ...pair(r.ever_drawn_game_count, r.ever_drawn_win_rate),
+      ...pair(r.game_count, r.win_rate),
+      ...pair(r.never_drawn_game_count, r.never_drawn_win_rate),
+    ];
+    return b.some((v) => v !== 0) ? b : 0;
+  };
+  const pairGroups = {};
+  const nameAt = new Map(names.map((nm, i) => [nm, i]));
+  for (const colors of ['WU', 'WB', 'WR', 'WG', 'UB', 'UR', 'UG', 'BR', 'BG', 'RG']) {
+    await new Promise((r) => setTimeout(r, 1500));
+    try {
+      const res = await fetch(`${url}&colors=${colors}`, { headers: { 'User-Agent': 'Mozilla/5.0 (personal draft overlay)' } });
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      const b = await res.json();
+      const rows = Array.isArray(b) ? b : b.data;
+      if (!Array.isArray(rows)) throw new Error('no cards');
+      const pb = new Array(names.length).fill(0);
+      for (const r of rows) if (nameAt.has(r.name)) pb[nameAt.get(r.name)] = blockOf(r);
+      pairGroups[`${colors}|all`] = { games: 0, wins: 0, blocks: pb };
+      console.log(`  ${colors}: ${rows.filter((r) => r.ever_drawn_win_rate != null).length} cards with a win rate in hand`);
+    } catch (e) {
+      console.log(`  ${colors}: skipped (${e.message})`);
+    }
+  }
   const today = new Date().toISOString().slice(0, 10);
   const out = {
     set: set.toUpperCase(),
@@ -149,7 +179,7 @@ async function buildEarly() {
     source: { games: 0, drafts: 0, firstGame: null, lastGame: today, fileDate: today, early: true, url: 'https://www.17lands.com/card_data' },
     names,
     cards,
-    groups: { 'ALL|all': { games: 0, wins: 0, blocks } },
+    groups: { 'ALL|all': { games: 0, wins: 0, blocks }, ...pairGroups },
     picks: { all: picks },
   };
   const target = path.join(DATA, `${set.toUpperCase()}.${format}.json`);

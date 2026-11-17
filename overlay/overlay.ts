@@ -1,6 +1,7 @@
 // The on-screen overlay. Plain DOM with no framework, so the same code runs
 // in the browser preview and in the real app.
 
+import { mountMullPlate } from './mull-plate.ts';
 import { coachRead, createCoach, gradeTaken, PackMemory, type Coach, type CoachRead, type PackInput, type PickResult } from './coach-hint.ts';
 import { gradeScore } from '../core/grades.ts';
 import { factLines, pairName } from '../coach/facts.ts';
@@ -976,7 +977,25 @@ export function mountOverlay(root: HTMLElement, api: OverlayApi): void {
       ])),
     ]);
 
-    panel.append(head, preview, onCard, coachSection, grades, lineUp);
+    // The mulligan plate (overlay/mull-plate.ts) reads this key; it lives outside Settings so the plate needs no panel.
+    const mullOn = (() => {
+      try {
+        return localStorage.getItem('overlay.mullInfo') !== 'off';
+      } catch {
+        return true;
+      }
+    })();
+    const games = section('In games', [
+      settingRow('Mulligan info', segmented(mullOn ? 'on' : 'off', [['on', 'On'], ['off', 'Off']], (value) => {
+        try {
+          localStorage.setItem('overlay.mullInfo', value);
+        } catch {
+          /* private storage off: stays on */
+        }
+      }), 'At the mulligan prompt: your expected win rate if you keep, and if you mulligan. Numbers only; you decide.'),
+    ]);
+
+    panel.append(head, preview, onCard, coachSection, games, grades, lineUp);
   }
 
   function section(title: string, rows: HTMLElement[]): HTMLElement {
@@ -1321,6 +1340,9 @@ export function mountOverlay(root: HTMLElement, api: OverlayApi): void {
     hidden = !hidden;
     renderAll();
   });
+
+  // Live mulligan info (2026-11-16): two win chances at Arena's mulligan prompt, never a verdict.
+  mountMullPlate(root, api);
 
   api.onDraftView(async (next) => {
     view = next;

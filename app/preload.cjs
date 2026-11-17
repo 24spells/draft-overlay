@@ -21,4 +21,6 @@ contextBridge.exposeInMainWorld('draftOverlay', {
   getAccount: () => ipcRenderer.invoke('overlay:account'),
   onAccount: (callback) => subscribe('overlay:account', callback),
   connectAccount: () => ipcRenderer.invoke('overlay:connect'),
+  onMulligan: (callback) => subscribe('overlay:mulligan', callback),
+  getMullModel: (setCode) => ipcRenderer.invoke('overlay:mull-model', setCode),
 });

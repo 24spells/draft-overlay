@@ -63,6 +63,10 @@ export type CoachData = { set: unknown; flow: unknown | null; builds: unknown | 
 
 /** Everything the overlay needs from its host: the real app or the preview. */
 export type OverlayApi = {
+  /** 2026-11-16: Arena's mulligan prompt (first seven, deck, play or draw, set) and when it clears. */
+  onMulligan?: (callback: (event: import('./mull-live.ts').MullEvent) => void) => () => void;
+  /** The keep-or-mulligan model for a set (sets/<SET>-mull.json on 24spells), or null. */
+  getMullModel?: (setCode: string) => Promise<import('./mulligan.ts').MullModel | null>;
   onDraftView: (callback: (view: DraftView | null) => void) => () => void;
   getSetStats: (
     setCode: string | null,

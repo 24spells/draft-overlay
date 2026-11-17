@@ -50,6 +50,7 @@ async function start(): Promise<void> {
   let hideCallback: () => void = () => {};
   let account: AccountState = { connected: new URLSearchParams(location.search).has('connected') ? 'you' : null, pairing: false };
   let accountCallback: (next: AccountState) => void = () => {};
+  let mullCallback: (event: import('../core/mull-live.ts').MullEvent) => void = () => {};
 
   mountOverlay(document.getElementById('overlay')!, {
     onDraftView(callback) {
@@ -78,7 +79,42 @@ async function start(): Promise<void> {
       account = { connected: null, pairing: true };
       accountCallback(account);
     },
+    // Mulligan preview (2026-11-16): ?mull=FRA&hand=N shows a real sample hand at a stand-in mulligan screen.
+    onMulligan(callback) {
+      mullCallback = callback;
+      return () => {};
+    },
+    getMullModel: (setCode) => fetch(`/mull-data/${setCode}-mull.json`).then((r) => (r.ok ? r.json() : null)).catch(() => null),
   });
+
+  const MULL = new URLSearchParams(location.search).get('mull')?.toUpperCase();
+  if (MULL) {
+    const model = await loadJson<{ samples: { hand: number[]; deck: number[]; onPlay: boolean }[] }>(`/mull-data/${MULL}-mull.json`);
+    const index = Number(new URLSearchParams(location.search).get('hand') ?? 0);
+    const sample = model.samples[index % model.samples.length];
+    stage.textContent = '';
+    stage.append(make('div', 'sim-tag', `Simulated Arena mulligan screen. Sample hand ${index} (${MULL}, 17Lands replay data)`));
+    const row = make('div', 'sim-hand');
+    for (const id of sample.hand) {
+      const name = stats.cards[String(id)]?.name;
+      const node = make('div', 'sim-card');
+      const source = name ? (images[name] ?? images[name.split(' // ')[0]]) : undefined;
+      if (source) {
+        const image = make('img');
+        image.alt = name ?? '';
+        image.src = source;
+        node.append(image);
+      } else {
+        node.append(make('div', 'sim-tile', name ?? 'Basic land'));
+      }
+      row.append(node);
+    }
+    const buttons = make('div', 'sim-mull-buttons');
+    buttons.append(make('span', 'sim-btn', 'Mulligan'), make('span', 'sim-btn keep', 'Keep 7'));
+    stage.append(row, buttons);
+    setTimeout(() => mullCallback({ kind: 'prompt', data: { gameId: 'sim', set: MULL, hand: sample.hand, deck: sample.deck, onPlay: sample.onPlay, prompt: 1 } }), 300);
+    return;
+  }
 
   function drawStage(pack: SimPack): void {
     stage.textContent = '';

@@ -43,6 +43,7 @@ import { LogWatcher } from './build/core/log-watcher.js';
 import { createArenaRecorder } from './arena-sync.mjs';
 import { SITE } from './site.mjs';
 import { readArenaLog } from './build/core/arena-records.js';
+import { createMullWatcher } from './build/core/mull-live.js';
 import { gunzipSync } from 'node:zlib';
 import { createRequire } from 'node:module';
 
@@ -446,6 +447,11 @@ function handleLogLine(line) {
   if (line.includes('DETAILED LOGS: DISABLED')) {
     setStatus('Turn on Detailed Logs in Arena settings');
   }
+  try {
+    mullFeed(line);
+  } catch {
+    // Mulligan info must never break the overlay.
+  }
   watchForRecords(line);
   const event = parseLogLine(line);
   if (!event) {
@@ -456,6 +462,14 @@ function handleLogLine(line) {
   }
   saveLine(line, event);
 }
+
+// Live mulligan info (2026-11-16): the seven, deck and play/draw at Arena's mulligan prompt -> the overlay plate.
+const mullFeed = createMullWatcher((event) => {
+  if (event.kind === 'prompt') {
+    logData(`mulligan: ${event.data.set ?? '?'} prompt ${event.data.prompt}, ${event.data.hand.length} cards, ${event.data.onPlay ? 'play' : 'draw'}`);
+  }
+  if (overlay && !overlay.isDestroyed()) overlay.webContents.send('overlay:mulligan', event);
+});
 
 function watchForRecords(line) {
   if (arena && RECORD_MARKERS.some((m) => line.includes(m))) arena.soon();
@@ -803,6 +817,31 @@ ipcMain.handle('overlay:coach', async (_event, setCode) => {
     }
   }
   return refreshCoach(setCode);
+});
+
+// The keep-or-mulligan model for a set: sets/<SET>-mull.json on the site, cached a day like the coach files.
+const mullCache = new Map();
+ipcMain.handle('overlay:mull-model', async (_event, setCode) => {
+  if (!/^[A-Z0-9]{2,5}$/.test(String(setCode ?? ''))) return null;
+  const hit = mullCache.get(setCode);
+  if (hit && Date.now() - hit.at < COACH_MAX_AGE_MS) return hit.model;
+  const file = path.join(COACH_DIR, `${setCode}-mull.json`);
+  let model = await fetchCoachFile(`${setCode}-mull.json`);
+  if (model?.keep && model?.ship) {
+    mkdirSync(COACH_DIR, { recursive: true });
+    writeFileSync(file, JSON.stringify(model));
+  } else if (existsSync(file)) {
+    try {
+      model = JSON.parse(readFileSync(file, 'utf8')); // offline: last good copy
+    } catch {
+      model = null;
+    }
+  } else {
+    model = null;
+  }
+  if (model) mullCache.set(setCode, { at: Date.now(), model });
+  logData(`mulligan model ${setCode}: ${model ? `${model.kind}` : 'not available'}`);
+  return model;
 });
 
 ipcMain.on('overlay:interactive', (event, interactive) => {
