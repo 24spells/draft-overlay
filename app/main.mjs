@@ -807,9 +807,15 @@ ipcMain.handle('overlay:coach', async (_event, setCode) => {
   if (existsSync(file)) {
     try {
       const { fetched, ...data } = JSON.parse(readFileSync(file, 'utf8'));
+      // Files cached before 0.3.12 have no slash line (fast vs slow games), and a failed download leaves
+      // it empty: wait for a fresh copy instead of showing "no data yet" all session (amaze, TDM,
+      // 2026-11-17). Offline, the cached copy still works.
+      if (!data.statline) {
+        const fresh = await refreshCoach(setCode);
+        if (fresh) return fresh;
+      }
       coachCache.set(setCode, data);
-      // Files cached before 0.3.12 have no slash line (fast vs slow games): fetch again now, not in a day.
-      if (Date.now() - fetched > COACH_MAX_AGE_MS || !('statline' in data)) {
+      if (Date.now() - fetched > COACH_MAX_AGE_MS) {
         void refreshCoach(setCode);
       }
       return data;
@@ -974,6 +980,15 @@ function localFileDate(setCode, format) {
   }
 }
 
+/** 0.3.13: the site's files gained Arena's sort colors and zoom flags (rev 2); older copies re-download once. */
+function localRev(setCode, format) {
+  try {
+    return loadStats(setCode, format)?.source?.rev ?? 1;
+  } catch {
+    return 1;
+  }
+}
+
 /** Download one set's files (every format the site has) when newer than ours. True if usable after. */
 async function downloadHostedSet(setCode, index = hostedIndex) {
   const idx = index ?? (await fetchHostedIndex());
@@ -986,7 +1001,7 @@ async function downloadHostedSet(setCode, index = hostedIndex) {
   let got = 0;
   for (const [format, meta] of Object.entries(formats)) {
     const have = localFileDate(setCode, format);
-    if (have && meta.fileDate && have >= meta.fileDate) continue;
+    if (have && meta.fileDate && have >= meta.fileDate && (meta.rev ?? 1) <= localRev(setCode, format)) continue;
     try {
       const r = await fetch(`${HOSTED}/${setCode}.${format}.json`, { signal: AbortSignal.timeout(60000) });
       if (!r.ok) continue;

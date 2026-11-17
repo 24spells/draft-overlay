@@ -31,11 +31,17 @@ export type Geometry = {
 
 export type Rect = { left: number; top: number; width: number; height: number };
 
+/** WUBRG order: 17Lands writes colors alphabetically ("RW"), the pair table below uses "WR". */
+export function wubrg(color: string | undefined): string {
+  const c = (color ?? '').toUpperCase();
+  return [...MONO_ORDER].filter((x) => c.includes(x)).join('');
+}
+
 function colorRank(card: SortableCard): number {
   if (card.isLand) {
     return 7;
   }
-  const color = card.color ?? '';
+  const color = wubrg(card.color);
   if (color.length > 1) {
     return 5;
   }
@@ -43,7 +49,7 @@ function colorRank(card: SortableCard): number {
 }
 
 function pairRank(card: SortableCard): number {
-  const color = card.color ?? '';
+  const color = wubrg(card.color);
   if (color.length <= 1) {
     return 0;
   }

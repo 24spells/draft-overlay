@@ -342,6 +342,8 @@ export function mountOverlay(root: HTMLElement, api: OverlayApi): void {
   let loadedFor = '';
   let hidden = false;
   let placed: Placed[] = [];
+  /** The coach outlines drawn this pack, so the ones under Arena's enlarged card can hide too (0.3.13). */
+  let rings: { id: number; rect: Placed['rect']; el: HTMLElement }[] = [];
   let hovered: Placed | null = null;
   let panelOpen = false;
   /** Outside a draft the stack shows as a folded tab until clicked open. */
@@ -500,6 +502,7 @@ export function mountOverlay(root: HTMLElement, api: OverlayApi): void {
   function renderPlates(): void {
     plates.textContent = '';
     placed = [];
+    rings = [];
     hovered = null;
     hoverPanel.classList.remove('visible');
 
@@ -526,7 +529,9 @@ export function mountOverlay(root: HTMLElement, api: OverlayApi): void {
       id,
       meta: set.cards[String(id)],
       rarity: set.cards[String(id)]?.rarity,
-      color: set.cards[String(id)]?.color,
+      // Arena sorts by the color you pay for. 17Lands' color identity also counts mana symbols in the
+      // rules text (Mardu Devotee: W, not BRW), which shifted every card after it (amaze, TDM, 2026-11-17).
+      color: set.cards[String(id)]?.castColor ?? set.cards[String(id)]?.color,
       isLand: set.cards[String(id)]?.isLand,
     }));
 
@@ -549,6 +554,7 @@ export function mountOverlay(root: HTMLElement, api: OverlayApi): void {
         ring.style.height = `${rect.height}px`;
         ring.style.setProperty('--u', `${rect.width / 185}px`);
         plates.append(ring);
+        rings.push({ id: card.id, rect, el: ring });
       }
       if (!settings.showStats) {
         continue;
@@ -601,36 +607,74 @@ export function mountOverlay(root: HTMLElement, api: OverlayApi): void {
 
   /**
    * Where Arena draws its enlarged card for the hovered one (0.3.8, measured from a TRK draft at
-   * 3200x1800): beside the card, about 3.4 card widths wide, over both rows. Right of the card when
-   * there is room, else left (the flip side is an estimate until checked in a real draft).
+   * 3200x1800): beside the card, about 3.5 card widths wide, over both rows. Right of the card when
+   * there is room, else left.
+   * 0.3.13 (amaze's TDM screenshot, Shock Brigade): a card that makes a token also shows the token,
+   * between the hovered card and the enlarged one, and a card with keywords shows rules panels on the
+   * far side. Each is about as wide as the enlarged card. Card flags come from 24spells (meta.zoom).
    */
-  function arenaZoom(rect: Placed['rect']): { left: number; right: number } {
+  function arenaZoom(rect: Placed['rect'], zoomFlags = 0): { left: number; right: number; cardLeft: number; cardRight: number } {
     const cw = rect.width;
     const right = rect.left + rect.width;
-    return right + ZOOM_SPAN * cw <= window.innerWidth
-      ? { left: right, right: right + ZOOM_SPAN * cw }
-      : { left: rect.left - ZOOM_SPAN * cw, right: rect.left };
+    const toRight = right + ZOOM_SPAN * cw <= window.innerWidth;
+    const token = zoomFlags & 1 ? ZOOM_SPAN * cw : 0;
+    const panels = zoomFlags & 2 ? ZOOM_SPAN * cw : 0;
+    const clamp = (x: number) => Math.max(0, Math.min(window.innerWidth, x));
+    if (toRight) {
+      const cardLeft = right + token;
+      return { left: right, right: clamp(cardLeft + ZOOM_SPAN * cw + panels), cardLeft, cardRight: clamp(cardLeft + ZOOM_SPAN * cw) };
+    }
+    const cardRight = rect.left - token;
+    return { left: clamp(cardRight - ZOOM_SPAN * cw - panels), right: rect.left, cardLeft: clamp(cardRight - ZOOM_SPAN * cw), cardRight };
   }
 
-  /** The hover panel beside Arena's enlarged card, on whichever side has more room, never over the hovered card. */
-  function placeHoverPanel(rect: Placed['rect']): void {
-    const zoom = arenaZoom(rect);
-    const lo = Math.min(zoom.left, rect.left);
-    const hi = Math.max(zoom.right, rect.left + rect.width);
-    const gap = 12;
-    const roomLeft = lo - gap - 8;
-    const roomRight = window.innerWidth - hi - gap - 8;
+  /** Open stretches of the screen between the blocked spans, widest first. */
+  function openGaps(blocked: [number, number][]): [number, number][] {
+    const gaps: [number, number][] = [];
+    let x = 8;
+    for (const [a, b] of [...blocked].sort((p, q) => p[0] - q[0])) {
+      if (a - 12 > x) gaps.push([x, a - 12]);
+      x = Math.max(x, b + 12);
+    }
+    if (window.innerWidth - 8 > x) gaps.push([x, window.innerWidth - 8]);
+    return gaps.sort((p, q) => q[1] - q[0] - (p[1] - p[0]));
+  }
+
+  /**
+   * The hover panel beside Arena's enlarged card, never over the hovered card. In order (Ken 2026-11-17):
+   * clear of everything Arena shows (card, token, rules panels); else over the rules panels only; else
+   * over the token too. Never over the enlarged card itself.
+   */
+  function placeHoverPanel(rect: Placed['rect'], zoomFlags = 0): void {
+    const zoom = arenaZoom(rect, zoomFlags);
+    const own: [number, number] = [rect.left, rect.left + rect.width];
     const ideal = Math.max(400, window.innerWidth * 0.29);
-    const left = roomLeft >= roomRight;
-    const width = Math.max(340, Math.min(ideal, left ? roomLeft : roomRight));
+    // The enlarged card plus the token between it and the hovered card.
+    const cardAndToken: [number, number] = [Math.min(zoom.cardLeft, rect.left + rect.width), Math.max(zoom.cardRight, rect.left)];
+    const tiers: [number, number][][] = [
+      [[zoom.left, zoom.right], own],
+      [cardAndToken, own],
+      [[zoom.cardLeft, zoom.cardRight], own],
+    ];
+    let gap: [number, number] | undefined;
+    for (const blocked of tiers) {
+      gap = openGaps(blocked)[0];
+      if (gap && gap[1] - gap[0] >= 340) break;
+    }
+    gap ??= [8, window.innerWidth - 8];
+    // Narrow before covering the enlarged card: down to 280px on small screens.
+    const width = Math.max(280, Math.min(ideal, gap[1] - gap[0]));
+    // Hug the side nearest the enlarged card, so the eye travels the least.
+    const nearRight = gap[1] <= zoom.cardLeft || gap[1] <= rect.left;
+    const left = nearRight ? gap[1] - width : gap[0];
     hoverPanel.style.width = `${width}px`;
     hoverPanel.style.minWidth = '0';
     hoverPanel.style.right = 'auto';
-    hoverPanel.style.left = `${left ? Math.max(8, lo - gap - width) : Math.min(window.innerWidth - width - 8, hi + gap)}px`;
+    hoverPanel.style.left = `${Math.max(8, Math.min(window.innerWidth - width - 8, left))}px`;
   }
 
   function renderHover(): void {
-    const zoom = hovered ? arenaZoom(hovered.rect) : null;
+    const zoom = hovered ? arenaZoom(hovered.rect, hovered.meta?.zoom ?? 0) : null;
     for (const entry of placed) {
       const near =
         hovered !== null &&
@@ -640,13 +684,17 @@ export function mountOverlay(root: HTMLElement, api: OverlayApi): void {
         zoom !== null && entry !== hovered && entry.rect.left < zoom.right && entry.rect.left + entry.rect.width > zoom.left;
       entry.plate.classList.toggle('covered', near || underZoom);
     }
+    for (const ring of rings) {
+      const under = zoom !== null && ring.id !== hovered?.id && ring.rect.left < zoom.right && ring.rect.left + ring.rect.width > zoom.left;
+      ring.el.classList.toggle('covered', under);
+    }
 
     hoverPanel.textContent = '';
     hoverPanel.classList.toggle('visible', hovered !== null);
     if (!hovered) {
       return;
     }
-    placeHoverPanel(hovered.rect);
+    placeHoverPanel(hovered.rect, hovered.meta?.zoom ?? 0);
 
     const row = hovered.row;
     const name = hovered.meta?.name ?? 'Unknown card';

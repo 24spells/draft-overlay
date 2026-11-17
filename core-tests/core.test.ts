@@ -138,6 +138,33 @@ describe('layout', () => {
     assert.deepEqual([placed[5].column, placed[5].row], [5, 0]);
   });
 
+  it("sorts by the color you pay for (amaze's TDM pack 2 pick 6, 2026-11-17)", () => {
+    // color here = castColor as 24spells sends it (17Lands' identity in the comment). Arena showed Shock Brigade 8th.
+    const pack = [
+      { id: 95580, rarity: 'common', color: 'U' }, // Unending Whisper
+      { id: 95590, rarity: 'common', color: 'B' }, // Alesha's Legacy
+      { id: 95531, rarity: 'common', color: 'W' }, // Mardu Devotee (identity BRW)
+      { id: 95640, rarity: 'common', color: 'R' }, // Shock Brigade
+      { id: 95676, rarity: 'common', color: 'G' }, // Roamer's Routine
+      { id: 95565, rarity: 'common', color: 'U' }, // Humbling Elder
+      { id: 95619, rarity: 'common', color: 'B' }, // Worthy Cost
+      { id: 95634, rarity: 'common', color: 'R' }, // Narset's Rebuke (identity RUW)
+      { id: 95787, rarity: 'rare', color: 'G', isLand: true }, // Kishla Village
+    ];
+    const placed = positionCards(pack);
+    assert.deepEqual(placed.map((p) => p.card.id), [95787, 95531, 95565, 95580, 95590, 95619, 95634, 95640, 95676]);
+    assert.deepEqual([placed[7].column, placed[7].row], [7, 0]);
+  });
+
+  it('reads gold pairs in either letter order (17Lands writes "RW", Arena groups "WR")', () => {
+    const placed = positionCards([
+      { id: 1, rarity: 'uncommon', color: 'RW' },
+      { id: 2, rarity: 'uncommon', color: 'UW' },
+    ]);
+    // WU comes before WR in Arena's pair order.
+    assert.deepEqual(placed.map((p) => p.card.id), [2, 1]);
+  });
+
   it('keeps unknown cards in the grid', () => {
     const placed = positionCards([{ id: 9 }, { id: 2, rarity: 'rare', color: 'U' }]);
     assert.deepEqual(placed.map((p) => p.card.id), [2, 9]);

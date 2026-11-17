@@ -121,7 +121,11 @@ async function start(): Promise<void> {
     stage.append(make('div', 'sim-tag', `Simulated Arena screen. Pack ${pack.packNumber}, pick ${pack.pickNumber}`));
 
     const geometry = gridGeometry(window.innerWidth, window.innerHeight);
-    const cards = pack.cardIds.map((id) => ({ id, ...stats.cards[String(id)] }));
+    // Like Arena: sorted by the color you pay for (0.3.13), whatever the overlay on top thinks.
+    const cards = pack.cardIds.map((id) => {
+      const meta = stats.cards[String(id)];
+      return { id, ...meta, color: meta?.castColor ?? meta?.color };
+    });
 
     for (const { card, column, row } of positionCards(cards)) {
       const rect = cardRect(column, row, geometry);

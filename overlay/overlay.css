@@ -47,7 +47,8 @@
   font-size: calc(var(--u) * 8);
 }
 
-.plate.covered {
+.plate.covered,
+.coach-outline.covered {
   opacity: 0;
 }
 
@@ -538,6 +539,8 @@
 /* ---------- Full stats on hover ---------- */
 .hover-panel {
   position: absolute;
+  /* Over the overlay's own controls when it lands at the screen edge (0.3.13): hovering a card is the focus. */
+  z-index: 20;
   top: 9vh;
   right: 1vw;
   display: none;

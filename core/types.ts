@@ -5,7 +5,12 @@ export type CardMeta = {
   n: number;
   name: string;
   rarity: string;
+  /** 17Lands' color identity (counts mana symbols in rules text). Used for the stats, not for sorting. */
   color: string;
+  /** 0.3.13: the color you pay for, WUBRG order (24spells adds it from Scryfall). Arena sorts the pack by this. */
+  castColor?: string;
+  /** 0.3.13: what Arena adds beside its enlarged card: 1 = a token it makes, 2 = keyword rules panels. */
+  zoom?: number;
   manaValue: number;
   isLand: boolean;
 };
