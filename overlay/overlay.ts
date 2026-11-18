@@ -34,7 +34,8 @@ import type {
 } from '../core/types.ts';
 
 type MainStat = MetricId | 'grade';
-type SmallStat = MetricId | 'none';
+// 'lift' (feedback #11, 2026-11-18): Lift when cast from 24spells' replay stat line, the hover's row.
+type SmallStat = MetricId | 'lift' | 'none';
 
 type Settings = {
   main: MainStat;
@@ -73,7 +74,8 @@ type Settings = {
 
 const DEFAULTS: Settings = {
   main: 'grade',
-  small: ['gih', 'iwd', 'ata'],
+  // 0.3.16 (thatdoug #11): full plates again, with Lift when cast in place of IWD.
+  small: ['gih', 'lift', 'ata'],
   gradeStyle: 'letter',
   basis: 'gih',
   deck: 'ALL',
@@ -90,9 +92,13 @@ const DEFAULTS: Settings = {
   coachGaps: true,
   coachColors: true,
   coachGrades: true,
-  plateStyle: 'compact',
+  plateStyle: 'full',
   coachFlow: true,
 };
+
+/** One-time moves of saved settings to new defaults. Saved settings hold every field, so a new default
+ * alone never reaches existing users. */
+const SETTINGS_REV = 2;
 
 /** Arena's enlarged card spans about this many card widths beside the hovered card (measured 2026-11-16). */
 const ZOOM_SPAN = 3.5;
@@ -135,6 +141,12 @@ const INTERACTION_PADDING = 24;
 function loadSettings(): Settings {
   try {
     const stored = JSON.parse(localStorage.getItem(STORAGE_KEY) ?? '{}');
+    if ((stored.rev ?? 1) < 2) {
+      // Rev 2 (0.3.16): everyone moves to the full plate with win rate in hand, LIFT and pick taken at.
+      stored.plateStyle = 'full';
+      stored.small = ['gih', 'lift', 'ata'];
+    }
+    stored.rev = SETTINGS_REV;
     return {
       ...DEFAULTS,
       ...stored,
@@ -455,6 +467,13 @@ export function mountOverlay(root: HTMLElement, api: OverlayApi): void {
       : { text: row.grade!, wide: false };
   }
 
+  /** Lift when cast on a plate: signed points, or a dash while the set's stat line is missing or loading. */
+  function liftDisplay(name: string | undefined): string {
+    const lines = view && statlineFor === view.setCode ? statline : null;
+    const wpa = name && lines ? lines.stats[name]?.wpa : undefined;
+    return wpa === undefined ? '-' : signed(wpa);
+  }
+
   function smallDisplay(row: CardRow | undefined, metric: MetricId): string {
     if (!row) {
       return '-';
@@ -482,15 +501,15 @@ export function mountOverlay(root: HTMLElement, api: OverlayApi): void {
     plate.append(mainCell);
 
     const smalls = settings.small
-      .filter((metric): metric is MetricId => metric !== 'none')
+      .filter((metric): metric is MetricId | 'lift' => metric !== 'none')
       .slice(0, compact ? 1 : 3);
     if (smalls.length > 0) {
       const list = element('div', 'smalls');
       for (const metric of smalls) {
         const cell = element('div', 'small');
         cell.append(
-          element('span', 'small-label', METRICS[metric].short),
-          element('span', 'small-value', smallDisplay(entry.row, metric)),
+          element('span', 'small-label', metric === 'lift' ? 'LIFT' : METRICS[metric].short),
+          element('span', 'small-value', metric === 'lift' ? liftDisplay(entry.meta?.name) : smallDisplay(entry.row, metric)),
         );
         list.append(cell);
       }
@@ -1023,9 +1042,9 @@ export function mountOverlay(root: HTMLElement, api: OverlayApi): void {
     const smalls = element('div', 'small-picks');
     settings.small.forEach((value, index) => {
       smalls.append(
-        styledSelect(value, [['none', 'None'], ...shortOptions], (next) => {
+        styledSelect(value, [['none', 'None'], ...shortOptions, ['lift', 'LIFT']], (next) => {
           settings.small[index] = next as SmallStat;
-        }, metricTitles),
+        }, { ...metricTitles, lift: 'LIFT: Lift when cast, win-rate points a turn gains when you cast it (24spells, from 17Lands replays)' }),
       );
     });
 
