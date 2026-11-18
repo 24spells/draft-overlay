@@ -343,6 +343,7 @@ function updateVisibility() {
     overlay.setIgnoreMouseEvents(true, { forward: true });
     overlay.setFocusable(false);
     overlay.hide();
+    stopCursorPoll();
     return;
   }
   const bounds = screen.screenToDipRect(null, foreground);
@@ -354,7 +355,44 @@ function updateVisibility() {
     overlay.setBounds(bounds, false);
   }
   overlay.showInactive();
+  startCursorPoll();
 }
+
+// ---------- Cursor polling (0.3.15) ----------
+// Windows forwards mouse moves to a click-through window through a low-level
+// hook, and some setups block it (most often Arena run as administrator).
+// Then hover, the zoom check and the buttons all go dead (amaze, 2026-11-17).
+// The cursor position itself is always readable, so send it every 33 ms;
+// the overlay uses it whenever forwarded moves stop arriving.
+let cursorTimer = null;
+let lastCursor = '';
+
+function startCursorPoll() {
+  if (cursorTimer) return;
+  cursorTimer = setInterval(() => {
+    if (!overlay || overlay.isDestroyed() || !overlay.isVisible()) return;
+    const point = screen.getCursorScreenPoint();
+    const bounds = overlay.getBounds();
+    const x = point.x - bounds.x;
+    const y = point.y - bounds.y;
+    const key = `${x},${y}`;
+    if (key === lastCursor) return;
+    lastCursor = key;
+    overlay.webContents.send('overlay:cursor', x, y);
+  }, 33);
+}
+
+function stopCursorPoll() {
+  if (cursorTimer) clearInterval(cursorTimer);
+  cursorTimer = null;
+  lastCursor = '';
+}
+
+ipcMain.on('overlay:mouse-note', (event, text) => {
+  if (overlay && !overlay.isDestroyed() && event.sender === overlay.webContents && typeof text === 'string') {
+    logVisibility(`mouse: ${text.slice(0, 200)}`);
+  }
+});
 
 // ---------- Which window is in front ----------
 function startForegroundHelper() {

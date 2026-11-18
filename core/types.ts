@@ -73,6 +73,10 @@ export type StatLineFile = { set: string; replay: boolean; stats: Record<string,
 
 /** Everything the overlay needs from its host: the real app or the preview. */
 export type OverlayApi = {
+  /** 0.3.15: the cursor in overlay coordinates, polled by the host (works when Windows blocks forwarded mouse moves). */
+  onCursor?: (callback: (x: number, y: number) => void) => () => void;
+  /** 0.3.15: one-line note for the visibility log (which mouse path is live). */
+  mouseNote?: (text: string) => void;
   /** 2026-11-16: Arena's mulligan prompt (first seven, deck, play or draw, set) and when it clears. */
   onMulligan?: (callback: (event: import('./mull-live.ts').MullEvent) => void) => () => void;
   /** The keep-or-mulligan model for a set (sets/<SET>-mull.json on 24spells), or null. */

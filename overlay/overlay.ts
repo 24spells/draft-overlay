@@ -1460,7 +1460,26 @@ export function mountOverlay(root: HTMLElement, api: OverlayApi): void {
   renderStack();
 
   window.addEventListener('resize', renderPlates);
+  // Mouse, two sources (0.3.15): forwarded moves when Windows delivers them,
+  // else the host's polled cursor. Forwarded wins while it is live.
+  let lastForwarded = 0;
+  let polledOnly = 0;
+  let notedPolling = false;
+  api.onCursor?.((x, y) => {
+    if (Date.now() - lastForwarded < 300) return;
+    const onWindow = x >= 0 && y >= 0 && x < window.innerWidth && y < window.innerHeight;
+    if (!notedPolling && onWindow && ++polledOnly >= 30) {
+      notedPolling = true;
+      api.mouseNote?.('no forwarded mouse moves; hover and buttons run on cursor polling');
+    }
+    mouseX = x;
+    mouseY = y;
+    updateHover(x, y);
+    updateInteractive(x, y);
+  });
   window.addEventListener('mousemove', (event) => {
+    lastForwarded = Date.now();
+    polledOnly = 0;
     mouseX = event.clientX;
     mouseY = event.clientY;
     updateHover(event.clientX, event.clientY);

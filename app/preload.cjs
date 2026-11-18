@@ -23,4 +23,6 @@ contextBridge.exposeInMainWorld('draftOverlay', {
   connectAccount: () => ipcRenderer.invoke('overlay:connect'),
   onMulligan: (callback) => subscribe('overlay:mulligan', callback),
   getMullModel: (setCode) => ipcRenderer.invoke('overlay:mull-model', setCode),
+  onCursor: (callback) => subscribe('overlay:cursor', callback),
+  mouseNote: (text) => ipcRenderer.send('overlay:mouse-note', text),
 });
