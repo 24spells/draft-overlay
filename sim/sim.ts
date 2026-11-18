@@ -61,8 +61,8 @@ async function start(): Promise<void> {
     // The coach hint, like the real app: the web trainer's files for the set (served by sim/serve.mjs).
     getCoachData: async (setCode) => {
       const get = (name: string) => fetch(`/coach-data/${name}`).then((r) => (r.ok ? r.json() : null)).catch(() => null);
-      const [set, flow, builds, splash, statline] = await Promise.all([get(`${setCode}.json`), get(`${setCode}-flow.json`), get(`${setCode}-builds.json`), get(`${setCode}-splash.json`), get(`${setCode}-statline.json`)]);
-      return set ? { set, flow, builds, splash, statline } : null;
+      const [set, flow, builds, splash, statline, value] = await Promise.all([get(`${setCode}.json`), get(`${setCode}-flow.json`), get(`${setCode}-builds.json`), get(`${setCode}-splash.json`), get(`${setCode}-statline.json`), get(`${setCode}-value.json`)]);
+      return set ? { set, flow, builds, splash, statline, value } : null;
     },
     onToggleHidden(callback) {
       hideCallback = callback;

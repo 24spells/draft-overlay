@@ -65,11 +65,18 @@ export type LoadedStats = { stats: SetStats; note: string | null };
  * Flow, prices and splash data may be missing (new sets).
  */
 /** statline: the card slash line from 24spells (sets/<SET>-statline.json): lean (fast vs slow games) and Lift when cast. */
-export type CoachData = { set: unknown; flow: unknown | null; builds: unknown | null; splash?: unknown | null; statline?: StatLineFile | null };
+/** value (2026-11-19): Value in decks from 24spells (sets/<SET>-value.json), only where the new deck grade is live.
+ *  null = the site has no file for the set; undefined = a cache from before the file existed. */
+export type CoachData = { set: unknown; flow: unknown | null; builds: unknown | null; splash?: unknown | null; statline?: StatLineFile | null; value?: CardValueFile | null };
 
 /** The site's src/lib/statline.ts file shape (only what the hover reads). */
 export type StatLine = { wpa?: number; wpaP?: number; lean?: number };
 export type StatLineFile = { set: string; replay: boolean; stats: Record<string, StatLine> };
+
+/** The site's src/lib/card-value.ts file shape: v = win-rate points per copy vs an average card (missing under the
+ *  floor of deck games), n = deck games, p = percentile among the set's valued nonland cards, l = 1 for lands (not valued). */
+export type CardValue = { v?: number; n: number; p?: number; l?: 1 };
+export type CardValueFile = { set: string; version: number; floor: number; cards: Record<string, CardValue> };
 
 /** Everything the overlay needs from its host: the real app or the preview. */
 export type OverlayApi = {

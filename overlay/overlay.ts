@@ -31,11 +31,13 @@ import type {
   LoadedStats,
   OverlayApi,
   StatLineFile,
+  CardValueFile,
 } from '../core/types.ts';
 
 type MainStat = MetricId | 'grade';
 // 'lift' (feedback #11, 2026-11-18): Lift when cast from 24spells' replay stat line, the hover's row.
-type SmallStat = MetricId | 'lift' | 'none';
+// 'value' (2026-11-19): Value in decks from 24spells' deck grade (LAB-011/LAB-015), the hover's row.
+type SmallStat = MetricId | 'lift' | 'value' | 'none';
 
 type Settings = {
   main: MainStat;
@@ -74,8 +76,8 @@ type Settings = {
 
 const DEFAULTS: Settings = {
   main: 'grade',
-  // 0.3.16 (thatdoug #11): full plates again, with Lift when cast in place of IWD.
-  small: ['gih', 'lift', 'ata'],
+  // 0.3.16 (thatdoug #11): full plates again. 0.3.17 (LAB-019): GIH, VALUE, ATA; sets without VALUE show LIFT in its place.
+  small: ['gih', 'value', 'ata'],
   gradeStyle: 'letter',
   basis: 'gih',
   deck: 'ALL',
@@ -98,7 +100,7 @@ const DEFAULTS: Settings = {
 
 /** One-time moves of saved settings to new defaults. Saved settings hold every field, so a new default
  * alone never reaches existing users. */
-const SETTINGS_REV = 2;
+const SETTINGS_REV = 3;
 
 /** Arena's enlarged card spans about this many card widths beside the hovered card (measured 2026-11-16). */
 const ZOOM_SPAN = 3.5;
@@ -145,6 +147,10 @@ function loadSettings(): Settings {
       // Rev 2 (0.3.16): everyone moves to the full plate with win rate in hand, LIFT and pick taken at.
       stored.plateStyle = 'full';
       stored.small = ['gih', 'lift', 'ata'];
+    }
+    if ((stored.rev ?? 1) < 3 && JSON.stringify(stored.small) === JSON.stringify(['gih', 'lift', 'ata'])) {
+      // Rev 3 (0.3.17, LAB-019): the default plate becomes GIH, VALUE, ATA. Custom choices are kept.
+      stored.small = ['gih', 'value', 'ata'];
     }
     stored.rev = SETTINGS_REV;
     return {
@@ -252,6 +258,8 @@ const PERFORMANCE: { metric: MetricId; label: string; sub?: string }[] = [
 ];
 
 const signed = (x: number) => `${x > 0 ? '+' : ''}${x.toFixed(1)}`;
+/** Value in decks sub-label, word for word the site's CardStats. */
+const VALUE_SUB = 'per copy vs average card';
 
 /** "Plays best in": fast games on the left, slow on the right; 12 points of lean reaches the end (the site's slider). */
 function leanBlock(lean: number | undefined, why: string | null): HTMLElement {
@@ -372,6 +380,8 @@ export function mountOverlay(root: HTMLElement, api: OverlayApi): void {
   /** The set's slash line (fast vs slow games, Lift when cast): null = not loaded, false = 24spells has none. */
   let statline: StatLineFile | false | null = null;
   let statlineFor = '';
+  /** Value in decks for the set (loads with the stat line): null = not loaded, false = 24spells has none. */
+  let cardValues: CardValueFile | false | null = null;
   /** Arena card id -> the coach's rank for it (1 = best) and points behind #1, for the pack on screen. */
   let coachTop = new Map<number, { rank: number; gap: number }>();
   let coachView: CoachRead | null = null;
@@ -474,6 +484,13 @@ export function mountOverlay(root: HTMLElement, api: OverlayApi): void {
     return wpa === undefined ? '-' : signed(wpa);
   }
 
+  /** Value in decks on a plate: signed points per copy, one decimal, or a dash (no file, loading, too few games). */
+  function valueDisplay(name: string | undefined): string {
+    const values = view && statlineFor === view.setCode ? cardValues : null;
+    const v = name && values ? values.cards[name]?.v : undefined;
+    return v === undefined ? '-' : signed(v);
+  }
+
   function smallDisplay(row: CardRow | undefined, metric: MetricId): string {
     if (!row) {
       return '-';
@@ -501,15 +518,18 @@ export function mountOverlay(root: HTMLElement, api: OverlayApi): void {
     plate.append(mainCell);
 
     const smalls = settings.small
-      .filter((metric): metric is MetricId | 'lift' => metric !== 'none')
+      .filter((metric): metric is MetricId | 'lift' | 'value' => metric !== 'none')
       .slice(0, compact ? 1 : 3);
     if (smalls.length > 0) {
       const list = element('div', 'smalls');
-      for (const metric of smalls) {
+      // VALUE exists only where 24spells measured it (TDM, FRA): elsewhere the plate shows LIFT in its place.
+      const noValues = cardValues === false && !!view && statlineFor === view.setCode;
+      for (const chosen of smalls) {
+        const metric = chosen === 'value' && noValues && !smalls.includes('lift') ? 'lift' : chosen;
         const cell = element('div', 'small');
         cell.append(
-          element('span', 'small-label', metric === 'lift' ? 'LIFT' : METRICS[metric].short),
-          element('span', 'small-value', metric === 'lift' ? liftDisplay(entry.meta?.name) : smallDisplay(entry.row, metric)),
+          element('span', 'small-label', metric === 'lift' ? 'LIFT' : metric === 'value' ? 'VALUE' : METRICS[metric].short),
+          element('span', 'small-value', metric === 'lift' ? liftDisplay(entry.meta?.name) : metric === 'value' ? valueDisplay(entry.meta?.name) : smallDisplay(entry.row, metric)),
         );
         list.append(cell);
       }
@@ -776,6 +796,11 @@ export function mountOverlay(root: HTMLElement, api: OverlayApi): void {
       }
       if (sl?.wpa !== undefined) hoverPanel.append(statBar('Lift when cast', `${signed(sl.wpa)} pts`, sl.wpaP ?? null, false, 'vs an ordinary turn'));
       else hoverPanel.append(statBar('Lift when cast', '-', null, true, lines === false ? `no ${setCode} replay data yet` : 'vs an ordinary turn'));
+      // Value in decks: the site's CardStats row (same label, sub-label and reasons).
+      const values = statlineFor === setCode ? cardValues : null;
+      const cv = values ? values.cards[name] : undefined;
+      if (cv?.v !== undefined) hoverPanel.append(statBar('Value in decks', `${cv.v > 0 ? '+' : ''}${cv.v.toFixed(2)} pts`, cv.p ?? null, false, VALUE_SUB));
+      else hoverPanel.append(statBar('Value in decks', '-', null, true, values === null ? VALUE_SUB : values === false ? `not measured for ${setCode} yet` : cv?.l ? 'lands are not measured' : cv ? 'too few games' : 'not measured for this card'));
       hoverPanel.append(sectionHead('Draft demand', 'its price, not its quality'));
       hoverPanel.append(pickRow('Taken around', row.values.ata));
     } else {
@@ -1042,9 +1067,13 @@ export function mountOverlay(root: HTMLElement, api: OverlayApi): void {
     const smalls = element('div', 'small-picks');
     settings.small.forEach((value, index) => {
       smalls.append(
-        styledSelect(value, [['none', 'None'], ...shortOptions, ['lift', 'LIFT']], (next) => {
+        styledSelect(value, [['none', 'None'], ...shortOptions, ['lift', 'LIFT'], ['value', 'VALUE']], (next) => {
           settings.small[index] = next as SmallStat;
-        }, { ...metricTitles, lift: 'LIFT: Lift when cast, win-rate points a turn gains when you cast it (24spells, from 17Lands replays)' }),
+        }, {
+          ...metricTitles,
+          lift: 'LIFT: Lift when cast, win-rate points a turn gains when you cast it (24spells, from 17Lands replays)',
+          value: 'VALUE: Value in decks, win-rate points one copy adds to a real deck vs an average card, skill taken out (24spells, from 17Lands games; sets with the new deck grade only)',
+        }),
       );
     });
 
@@ -1429,12 +1458,14 @@ export function mountOverlay(root: HTMLElement, api: OverlayApi): void {
     coachFor = setCode;
     coach = null;
     statline = null;
+    cardValues = null;
     statlineFor = setCode;
     const data = await api.getCoachData?.(setCode).catch(() => null);
     if (coachFor !== setCode) {
       return;
     }
     statline = data?.statline?.stats ? data.statline : false;
+    cardValues = data?.value?.cards ? data.value : false;
     try {
       coach = data ? createCoach(data) : null;
     } catch (error) {

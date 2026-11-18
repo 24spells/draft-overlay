@@ -812,18 +812,19 @@ async function fetchCoachFile(name) {
 }
 
 async function downloadCoach(setCode) {
-  const [set, flow, builds, splash, statline] = await Promise.all(
-    [`${setCode}.json`, `${setCode}-flow.json`, `${setCode}-builds.json`, `${setCode}-splash.json`, `${setCode}-statline.json`].map(fetchCoachFile),
+  // -value.json (2026-11-19): Value in decks, only on sets where the new deck grade is live (null elsewhere).
+  const [set, flow, builds, splash, statline, value] = await Promise.all(
+    [`${setCode}.json`, `${setCode}-flow.json`, `${setCode}-builds.json`, `${setCode}-splash.json`, `${setCode}-statline.json`, `${setCode}-value.json`].map(fetchCoachFile),
   );
   if (!set?.cards || !set?.stats) {
     logData(`coach ${setCode}: not on the trainer site (or offline)`);
     return null;
   }
-  const data = { set, flow, builds, splash, statline };
+  const data = { set, flow, builds, splash, statline, value: value?.cards ? value : null };
   mkdirSync(COACH_DIR, { recursive: true });
   writeFileSync(path.join(COACH_DIR, `${setCode}.json`), JSON.stringify({ fetched: Date.now(), ...data }));
   coachCache.set(setCode, data);
-  logData(`coach ${setCode}: downloaded (${set.cards.length} cards, flow ${flow ? 'yes' : 'no'}, shape prices ${builds?.shapeTax ? 'yes' : 'no'}, splash data ${splash ? 'yes' : 'no'})`);
+  logData(`coach ${setCode}: downloaded (${set.cards.length} cards, flow ${flow ? 'yes' : 'no'}, value in decks ${value?.cards ? 'yes' : 'no'}, shape prices ${builds?.shapeTax ? 'yes' : 'no'}, splash data ${splash ? 'yes' : 'no'})`);
   return data;
 }
 
@@ -848,7 +849,8 @@ ipcMain.handle('overlay:coach', async (_event, setCode) => {
       // Files cached before 0.3.12 have no slash line (fast vs slow games), and a failed download leaves
       // it empty: wait for a fresh copy instead of showing "no data yet" all session (amaze, TDM,
       // 2026-11-17). Offline, the cached copy still works.
-      if (!data.statline) {
+      // Caches from before 0.3.17 have no value key at all (not even null): fetch once so Value in decks shows.
+      if (!data.statline || !('value' in data)) {
         const fresh = await refreshCoach(setCode);
         if (fresh) return fresh;
       }

@@ -40,8 +40,14 @@ createServer(async (request, response) => {
       response.writeHead(body ? 200 : 404, { 'Content-Type': TYPES['.json'], 'Cache-Control': 'no-store' }).end(body ?? 'null');
       return;
     }
-    const coachFile = url.pathname.match(/^\/coach-data\/([A-Z0-9]{2,5}(?:-flow|-builds|-splash|-statline)?\.json)$/);
+    const coachFile = url.pathname.match(/^\/coach-data\/([A-Z0-9]{2,5}(?:-flow|-builds|-splash|-statline|-value)?\.json)$/);
     if (coachFile) {
+      // Value in decks (2026-11-19): the trainer's freshly exported file first (preview before publishing).
+      const local = path.join('C:/Users/taway/draft-trainer/public/sets', coachFile[1]);
+      if (coachFile[1].endsWith('-value.json') && existsSync(local)) {
+        response.writeHead(200, { 'Content-Type': TYPES['.json'], 'Cache-Control': 'no-store' }).end(readFileSync(local, 'utf8'));
+        return;
+      }
       const upstream = await fetch(`${COACH_SITE}/${coachFile[1]}`).catch(() => null);
       const json = upstream?.ok && (upstream.headers.get('content-type') ?? '').includes('json');
       response
